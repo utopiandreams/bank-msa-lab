@@ -12,6 +12,12 @@ spec:
     repoURL: https://metallb.github.io/metallb
     chart: metallb
     targetRevision: 0.16.2
+    helm:
+      valuesObject:
+        # 0.16 차트는 BGP용 FRR-K8s를 기본으로 노드마다 띄운다.
+        # 이 프로젝트는 L2(ARP) 모드만 쓰므로 끈다 → 노드당 파드 1개, 메모리 절약
+        frrk8s:
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system
