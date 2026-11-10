@@ -208,6 +208,18 @@ MetalLB 설치 전에는 ②~⑥만 있고 ①이 없다 → `<pending>`.
 
 - `flannel.1`: `vxlan id 1 local 172.30.1.231 dev eth0 dstport 8472`. 공유기는 겉봉(노드 IP)만 보므로 10.42를 몰라도 배달된다. 이것이 "파드 네트워크는 노드끼리만 아는 세계"의 실체다.
 - **보낸 사람을 바꾸는(SNAT) 이유:** 바꾸지 않으면 Traefik이 맥북에게 직접 답장한다. 맥북은 `.231`에 보냈는데 다른 곳에서 답이 오니 버린다.
+- **한 줄 요약:** 노드A(.240 담당, ARP로 유인) → 노드B의 파드 → 응답은 **반드시 노드A를 거쳐야** 한다. 바꿔치기한 기록(conntrack)을 노드A만 갖고 있어서 원래대로(보낸 사람 = .240) 되돌릴 수 있기 때문이다. 그래서 보낸 사람을 노드A로 바꿔치고, 그 대가로 앱에는 손님이 전부 노드A로 보인다.
+- 실측 (2026-11-11): hello 응답의 `X-Forwarded-For: 10.42.3.1` = bank-w3의 `cni0` 주소 (노드 자신). Traefik이 같은 w3에 있어서 flannel을 거치지 않았는데도 바뀌었다 → 원인은 flannel이 아니라 `externalTrafficPolicy: Cluster`(기본값)의 SNAT이다.
+- 📌 **2주 차에 복습 예정** (1주 차에는 이해가 덜 됨): 아래 X-Forwarded-For 부분
+- **Traefik → 다른 노드의 파드 구간은?** 바꿔치기가 없다. 실측 (Traefik on w3 → hello on w1):
+  ```
+  RemoteAddr:      10.42.3.2   ← 실제 연결 상대 = Traefik 파드 (노드 IP 아님)
+  X-Forwarded-For: 10.42.3.1   ← Traefik이 적은 "원래 손님" 메모 (입구에서 이미 바뀐 값)
+  ```
+  - 파드끼리는 서로 직접 답장할 수 있어서(파드 IP는 클러스터 어디서든 통함) SNAT이 필요 없다. SNAT은 "바깥 → 노드" 입구에서만 일어난다.
+  - L7 프록시(Traefik)는 새 연결을 맺어 대신 요청하므로, **RemoteAddr이 프록시인 건 정상**이다. 그래서 원래 손님 IP는 `X-Forwarded-For` 헤더로 전달하는 관례가 있다 (`손님, 프록시1, 프록시2`처럼 쌓임).
+  - **고칠 곳은 입구 한 군데.** 입구에서 SNAT이 없어지면(`externalTrafficPolicy: Local`) X-Forwarded-For가 맞게 채워지고, 앱은 그 헤더를 읽으면 된다.
+  - Spring Boot: `server.forward-headers-strategy`로 헤더를 반영한다. **보안 함정:** X-Forwarded-For는 고객이 위조할 수 있으므로 믿을 수 있는 프록시가 붙인 값만 신뢰한다 (trusted proxies).
 - **실무 포인트: 앱 로그에 고객 IP 대신 노드 IP가 찍힌다.** `externalTrafficPolicy: Local`로 설정하면 파드가 있는 노드만 받아서 고객 IP가 보존된다 (대신 파드 없는 노드로 온 요청은 못 받는다). 은행에서는 이상 거래 탐지와 감사 로그 때문에 고객 IP가 중요하다.
 
 ### NodePort → Traefik 연결은 어디에 설정되나
