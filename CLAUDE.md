@@ -86,12 +86,12 @@
 
 ## 5. 로드맵과 현재 진행 상황
 
-**현재: Phase 1 / 1주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
+**현재: Phase 1 / 2주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
 > 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
 ### Phase 1. 뼈대 (1~4주)
-- [ ] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
+- [x] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
 - [ ] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `account` 서비스를 Argo CD로 클러스터에 배포
   - 📌 복습 (세션 시작 시 먼저): **X-Forwarded-For와 고객 IP 유실.** 1주 차에 이해가 덜 됐다고 개발자가 요청함. `docs/infra/notes/k8s-service-networking.md`의 "파드가 없는 노드의 NodePort로 오면…" 섹션을 바탕으로, 쉬운 비유와 클러스터 실측으로 다시 설명한다 (RemoteAddr vs X-Forwarded-For, 입구 SNAT, `externalTrafficPolicy: Local`, Spring `forward-headers-strategy`, 헤더 위조)
 - [ ] 3주: `transfer`·`ledger` 추가, 동기 REST로 송금 동작, `gateway` 라우팅 + JWT 인증 필터

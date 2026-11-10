@@ -57,7 +57,8 @@
 - [x] MetalLB 0.16.2 (L2 모드, FRR-K8s 비활성화): Argo CD가 설치. Traefik이 `172.30.1.240`을 받음
 - [x] hello(whoami) + Ingress: `http://hello.172.30.1.240.nip.io` 응답 확인
 - [x] ARP 확인: 맥북의 `.240` MAC(`bc:24:11:90:48:f0`) = bank-w3의 MAC → bank-w3의 speaker가 대표로 대답 중
-- [ ] 개발자 직접 확인: Git 수정 → push → 자동 반영 / 일부러 삭제 → self-heal
+- [x] 개발자 직접 확인: Git 수정(hello v2, replicas 3) → push → 자동 반영 / `kubectl delete deployment` → Argo CD가 몇 초 안에 재생성 (self-heal)
+- [x] Argo CD admin 비밀번호 변경, 초기 비밀번호 Secret 삭제
 
 ### 노드
 
@@ -144,6 +145,7 @@ GitOps 함정 메모:
 
 - [클라우드 이미지와 cloud-init](notes/cloud-image-and-cloud-init.md): 누가 무엇을 실행하는지, 인프라가 뜨는 순서, 디버깅
 - [쿠버네티스 서비스 네트워킹과 MetalLB](notes/k8s-service-networking.md): 파드 IP·ClusterIP·NodePort·LoadBalancer, ARP, MetalLB L2/BGP, Ingress와의 관계
+- [GitOps와 Argo CD는 어떻게 배포하나](notes/gitops-argocd.md): Git과 클러스터 비교·적용, 롤링 업데이트, 이미지 배포 흐름(CI + CD)
 
 ## 5. 결정 기록
 
