@@ -1,0 +1,29 @@
+#cloud-config
+hostname: ${hostname}
+manage_etc_hosts: true
+timezone: Asia/Seoul
+
+users:
+  - name: ${user}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ${ssh_key}
+
+package_update: true
+packages:
+  - qemu-guest-agent
+  - curl
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  # 서버가 아직 안 떠 있어도 k3s-agent 서비스가 스스로 재시도하며 합류한다
+  - >-
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="${k3s_version}"
+    K3S_URL="https://${server_ip}:6443"
+    K3S_TOKEN="${k3s_token}"
+    sh -s - agent
+    --node-ip ${ip}
+    --node-label ${node_label}

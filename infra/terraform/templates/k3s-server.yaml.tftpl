@@ -1,0 +1,33 @@
+#cloud-config
+hostname: ${hostname}
+manage_etc_hosts: true
+timezone: Asia/Seoul
+
+users:
+  - name: ${user}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ${ssh_key}
+
+package_update: true
+packages:
+  - qemu-guest-agent
+  - curl
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  # --disable servicelb : LoadBalancer는 MetalLB로 대체 (실무 온프레미스에서 흔한 구성)
+  # --node-taint CriticalAddonsOnly : 컨트롤 플레인(4GB)에는 앱 파드를 올리지 않는다
+  # Traefik(Ingress)과 local-path(StorageClass)는 k3s 기본값을 그대로 쓴다
+  - >-
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="${k3s_version}"
+    K3S_TOKEN="${k3s_token}"
+    sh -s - server
+    --node-ip ${ip}
+    --tls-san ${ip}
+    --disable servicelb
+    --node-taint CriticalAddonsOnly=true:NoExecute
+    --node-label ${node_label}

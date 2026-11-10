@@ -1,0 +1,33 @@
+# Terraform — 상태 파일과 변수 파일에는 비밀값(API 토큰, k3s 토큰)이 평문으로 들어간다. 절대 커밋 금지
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+crash.log
+*.tfplan
+
+# 비밀값
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+
+# Gradle / Kotlin
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+.kotlin/
+
+# Frontend
+node_modules/
+dist/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
