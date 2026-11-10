@@ -1,0 +1,30 @@
+# MetalLB 본체 (controller + speaker, CRD 포함). 공식 Helm 차트를 그대로 설치한다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"   # 가장 먼저
+spec:
+  project: default
+  source:
+    repoURL: https://metallb.github.io/metallb
+    chart: metallb
+    targetRevision: 0.16.2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  # MetalLB가 실행 중에 CRD의 caBundle을 스스로 채워 넣는다.
+  # 이를 무시하지 않으면 Argo CD가 "Git과 다르다(OutOfSync)"로 계속 표시한다. GitOps 도입 시 흔한 함정
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/conversion/webhook/clientConfig/caBundle

@@ -1,0 +1,10 @@
+# MetalLB가 LoadBalancer 서비스에 나눠 줄 IP 범위.
+# 공유기 DHCP 범위(.1~100, .128~148)와 노드 IP(.230~.239) 밖으로 잡는다.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 172.30.1.240-172.30.1.250

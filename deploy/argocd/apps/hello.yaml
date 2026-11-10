@@ -1,0 +1,23 @@
+# GitOps 동작 확인용 테스트 앱
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/apps/hello
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hello
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

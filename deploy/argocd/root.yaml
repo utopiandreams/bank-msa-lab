@@ -1,0 +1,21 @@
+# App of Apps의 뿌리. 최초 1회만 kubectl apply 한다 (install-argocd.sh가 해 줌).
+# 이후로는 deploy/argocd/apps/ 폴더에 Application 파일을 추가/수정/삭제하고 push하면
+# Argo CD가 알아서 반영한다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true     # Git에서 지운 리소스는 클러스터에서도 지운다
+      selfHeal: true  # 누가 kubectl로 바꾸면 Git 상태로 되돌린다

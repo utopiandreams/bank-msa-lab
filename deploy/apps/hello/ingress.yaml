@@ -1,0 +1,18 @@
+# Traefik 안내 데스크에 붙일 안내표: "hello.172.30.1.240.nip.io로 오면 hello 서비스로"
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hello.172.30.1.240.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello
+                port:
+                  name: http

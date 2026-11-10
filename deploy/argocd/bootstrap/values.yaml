@@ -1,0 +1,23 @@
+# Argo CD Helm 차트(argo/argo-cd 10.17.1, Argo CD v3.6.1) 설정
+# 최초 1회 infra/bootstrap/install-argocd.sh로 설치할 때 쓴다.
+
+global:
+  domain: argocd.172.30.1.240.nip.io
+
+configs:
+  params:
+    # TLS는 앞단(Traefik)에서 처리할 수 있으므로 Argo CD 서버는 HTTP로 서빙한다.
+    # 지금은 내부망 HTTP 전용. HTTPS는 필요해지면 Traefik + cert-manager로 추가한다.
+    server.insecure: true
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    # hostname 생략 → global.domain 사용
+
+# 메모리 절약: 쓰지 않는 컴포넌트는 끈다
+dex:
+  enabled: false          # SSO(GitHub/Google 로그인)를 안 쓰므로 불필요. admin 계정으로 로그인
+notifications:
+  enabled: false          # Slack 알림 등. 필요해지면 켠다

@@ -1,0 +1,9 @@
+# 위 풀의 IP를 L2 모드(ARP)로 알린다. → speaker가 "그 IP는 저예요"라고 대답
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: default
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - default-pool
