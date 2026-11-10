@@ -116,6 +116,21 @@ kubectl get nodes -o wide
 terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 ```
 
+### 전원 관리 (전기료 절약: 실험할 때만 켠다)
+
+| 동작 | 스크립트 | Raycast |
+| --- | --- | --- |
+| 켜기: Wake-on-LAN → VM 230→231~233 시작 → 노드 Ready 대기 | `infra/scripts/cluster-up.sh` | Bank Lab Up 🟢 |
+| 끄기: 워커 → 컨트롤 플레인 정상 종료 → 호스트 `poweroff` | `infra/scripts/cluster-down.sh` | Bank Lab Down 🔴 (확인 창 있음) |
+| 상태: 호스트 / VM / 노드 / Argo CD 앱 | `infra/scripts/cluster-status.sh` | Bank Lab Status 📊 |
+
+- Raycast 등록: Raycast 설정 → Extensions → Script Commands → Add Directories → `infra/scripts/raycast` 선택
+- 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
+- Wake-on-LAN: Proxmox `enp5s0` (MAC `22:02:4d:07:2d:06`) 지원 모드 `pumbg`. 기본값이 `d`(꺼짐)라 `infra/bootstrap/enable-wol.sh`로 `wol g`를 켜고, systemd 서비스 `wol-enp5s0`로 부팅마다 다시 켜지게 했다.
+  - 매직 패킷은 브로드캐스트라 **맥북이 집 네트워크에 있어야** 한다.
+  - BIOS/UEFI의 Wake-on-LAN 설정도 필요하다 → 첫 실제 테스트 결과를 여기에 기록할 것: (미확인)
+- VM은 `on_boot = false`라서 호스트만 켜면 VM은 꺼진 채로 있다 → cluster-up.sh가 켠다.
+
 ### 배포 구조 (GitOps)
 
 ```
