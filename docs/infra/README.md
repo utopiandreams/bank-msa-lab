@@ -128,7 +128,9 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 - 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
 - Wake-on-LAN: Proxmox `enp5s0` (MAC `22:02:4d:07:2d:06`) 지원 모드 `pumbg`. 기본값이 `d`(꺼짐)라 `infra/bootstrap/enable-wol.sh`로 `wol g`를 켜고, systemd 서비스 `wol-enp5s0`로 부팅마다 다시 켜지게 했다.
   - 매직 패킷은 브로드캐스트라 **맥북이 집 네트워크에 있어야** 한다.
-  - BIOS/UEFI의 Wake-on-LAN 설정도 필요하다 → 첫 실제 테스트 결과를 여기에 기록할 것: (미확인)
+  - 2026-11-11 실제 테스트: Bank Lab Down으로 종료 → Bank Lab Up으로 원격 부팅 성공. **BIOS 설정 변경 없이 동작했다.** 재부팅 후 노드 4대 Ready, Argo CD 앱 4개 Synced/Healthy, hello v2 응답까지 자동으로 복구됐다.
+  - 종료는 VM을 하나씩 정상 종료하느라 1~2분 걸린다 (바로 꺼지지 않는다고 당황하지 말 것).
+- **TODO (나중에): 집 밖에서 켜고 끄기.** Proxmox가 꺼져 있으면 매직 패킷을 대신 보내 줄 "항상 켜진 집 안의 무언가"가 필요하다. 후보: 공유기의 원격 WOL 기능 / 라즈베리파이 같은 저전력 기기 + Tailscale(VPN). Proxmox나 SSH 포트를 인터넷에 직접 열지는 않는다 (보안).
 - VM은 `on_boot = false`라서 호스트만 켜면 VM은 꺼진 채로 있다 → cluster-up.sh가 켠다.
 
 ### 배포 구조 (GitOps)
