@@ -5,7 +5,7 @@ metadata:
   labels:
     app: hello
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: hello
@@ -19,7 +19,7 @@ spec:
           image: traefik/whoami:v1.12.0   # 요청을 받으면 자기 파드 이름·IP 등을 그대로 보여 주는 작은 웹 서버
           env:
             - name: WHOAMI_NAME
-              value: "hello v1"           # ← 이 값을 바꿔서 push → 브라우저 응답의 Name이 바뀌는지 확인
+              value: "hello v2"           # ← 이 값을 바꿔서 push → 브라우저 응답의 Name이 바뀌는지 확인
           ports:
             - name: http
               containerPort: 80
