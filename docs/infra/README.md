@@ -53,8 +53,11 @@
 - [x] 최소 권한 토큰 발급 (`terraform@pve!provider`)
 - [x] `terraform apply`: 리소스 10개 생성, 약 2분 (이미지 다운로드 47초 + VM 생성 약 1분). cloud-init으로 k3s를 설치해 노드 4대 모두 Ready (`v1.37.2+k3s1`, Ubuntu 24.04.5, containerd 2.3.7)
 - [x] kube-system 애드온: coredns, local-path(기본 StorageClass), metrics-server, Traefik. k3s가 Gateway API CRD도 함께 설치함
-- [ ] MetalLB: Traefik `LoadBalancer` 서비스가 `<pending>` 상태 (servicelb를 끈 결과로, 의도한 상태)
-- [ ] Argo CD + hello 앱 GitOps
+- [x] Argo CD v3.6.1 (Helm 차트 10.17.1): `infra/bootstrap/install-argocd.sh`로 최초 1회 설치, root 앱 등록 (App of Apps)
+- [x] MetalLB 0.16.2 (L2 모드, FRR-K8s 비활성화): Argo CD가 설치. Traefik이 `172.30.1.240`을 받음
+- [x] hello(whoami) + Ingress: `http://hello.172.30.1.240.nip.io` 응답 확인
+- [x] ARP 확인: 맥북의 `.240` MAC(`bc:24:11:90:48:f0`) = bank-w3의 MAC → bank-w3의 speaker가 대표로 대답 중
+- [ ] 개발자 직접 확인: Git 수정 → push → 자동 반영 / 일부러 삭제 → self-heal
 
 ### 노드
 
@@ -88,7 +91,7 @@
 | StorageClass | k3s 기본 `local-path` | 가장 가볍다. 단점: 노드에 묶여서, 노드가 죽으면 해당 PV도 사용 불가 → 16주 차 노드 장애 실험 때 재검토 |
 | LoadBalancer | MetalLB (L2), k3s servicelb는 비활성화 | 실무 온프레미스의 표준적인 선택 |
 | Ingress | k3s 기본 Traefik | 추가 설치 없음. Gateway API로 전환은 필요할 때 검토 |
-| GitOps | Argo CD | 확정 |
+| GitOps | Argo CD, App of Apps (`deploy/argocd/root.yaml` → `deploy/argocd/apps/`) | 확정. 최초 1회만 Helm으로 설치하고, 이후 모든 설치는 Git으로 |
 | Git 저장소 | `git@github.com:utopiandreams/bank-msa-lab.git` | 확정 |
 
 ### 사용법
@@ -105,9 +108,32 @@ cd infra/terraform && terraform init && terraform apply
 export KUBECONFIG=~/.kube/bank-msa-lab.yaml
 kubectl get nodes -o wide
 
+# 3) Argo CD 설치 + root 앱 등록 (최초 1회). 이후 MetalLB·hello 등은 Argo CD가 Git을 보고 설치
+./infra/bootstrap/install-argocd.sh
+
 # 전부 지우고 다시 만들기
-terraform destroy && terraform apply
+terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 ```
+
+### 배포 구조 (GitOps)
+
+```
+deploy/
+├── argocd/
+│   ├── bootstrap/values.yaml   # Argo CD 자체 Helm 설정 (최초 설치용)
+│   ├── root.yaml               # App of Apps 뿌리 (최초 1회 kubectl apply)
+│   └── apps/                   # 여기에 Application 파일을 추가하면 Argo CD가 설치
+│       ├── metallb.yaml          (wave 0, 공식 Helm 차트)
+│       ├── metallb-config.yaml   (wave 1, IP 풀)
+│       └── hello.yaml            (wave 2)
+├── platform/metallb-config/    # IPAddressPool, L2Advertisement
+└── apps/hello/                 # Deployment, Service, Ingress
+```
+
+GitOps 함정 메모:
+- **sync-wave는 Application 사이에서 "준비될 때까지" 기다려 주지 않는다** (Argo CD는 기본적으로 Application의 health를 판정하지 않음). 그래서 metallb-config에 `retry` + `SkipDryRunOnMissingResource`를 넣어, MetalLB CRD와 웹훅이 뜰 때까지 재시도하게 했다.
+- MetalLB가 실행 중에 CRD의 caBundle을 채워 넣어서 OutOfSync로 보인다 → `ignoreDifferences`로 무시한다.
+- Argo CD는 기본 3분마다 Git을 확인한다. 바로 반영하려면 UI에서 Refresh를 누르거나 `kubectl -n argocd annotate application <앱> argocd.argoproj.io/refresh=hard --overwrite`를 실행한다.
 
 ### 알려진 한계
 - bpg 프로바이더는 스니펫 업로드와 이미지 디스크 임포트를 SSH로 처리한다. 그래서 이 부분만 Proxmox root SSH(키 인증)를 쓴다. 개선 방향: sudo 권한이 있는 일반 SSH 사용자.
@@ -117,6 +143,7 @@ terraform destroy && terraform apply
 ## 4. 학습 노트
 
 - [클라우드 이미지와 cloud-init](notes/cloud-image-and-cloud-init.md): 누가 무엇을 실행하는지, 인프라가 뜨는 순서, 디버깅
+- [쿠버네티스 서비스 네트워킹과 MetalLB](notes/k8s-service-networking.md): 파드 IP·ClusterIP·NodePort·LoadBalancer, ARP, MetalLB L2/BGP, Ingress와의 관계
 
 ## 5. 결정 기록
 
@@ -131,10 +158,12 @@ terraform destroy && terraform apply
 - Proxmox UI: `https://172.30.1.200:8006`
 - Proxmox SSH: `ssh root@172.30.1.200`
 - kube-apiserver: `https://172.30.1.230:6443` (kubeconfig: `~/.kube/bank-msa-lab.yaml`, 레포 밖)
-- Argo CD UI: TBD
+- Argo CD UI: `http://argocd.172.30.1.240.nip.io` (admin / 비밀번호: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`)
+- hello 테스트 앱: `http://hello.172.30.1.240.nip.io`
 
 ## 7. 트러블슈팅 로그
 
 `날짜 / 증상 / 원인 / 해결` 형식으로 쌓는다. 이 기록도 면접 답변 소재가 된다.
 
-- (아직 없음)
+- **2026-11-11 / MetalLB 설치 후 노드마다 `frr-k8s` 파드가 뜸 (Init 상태로 오래 걸림)** / MetalLB 0.16 차트는 BGP용 FRR-K8s 백엔드를 기본으로 켠다 / L2 모드만 쓰므로 `frrk8s.enabled: false` → Git push → Argo CD가 반영. 노드당 파드 2개에서 1개(speaker)로 줄었다.
+- **2026-11-11 / hello 응답의 `X-Forwarded-For`가 고객(맥북) IP가 아니라 `10.42.3.1`** / NodePort·LB 경로의 SNAT 때문에 원래 IP가 사라짐 (`notes/k8s-service-networking.md` 참고) / 아직 해결하지 않음. 필요해지면 Traefik 서비스에 `externalTrafficPolicy: Local`을 검토한다.
