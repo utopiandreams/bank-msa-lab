@@ -210,7 +210,24 @@ MetalLB 설치 전에는 ②~⑥만 있고 ①이 없다 → `<pending>`.
 - **보낸 사람을 바꾸는(SNAT) 이유:** 바꾸지 않으면 Traefik이 맥북에게 직접 답장한다. 맥북은 `.231`에 보냈는데 다른 곳에서 답이 오니 버린다.
 - **한 줄 요약:** 노드A(.240 담당, ARP로 유인) → 노드B의 파드 → 응답은 **반드시 노드A를 거쳐야** 한다. 바꿔치기한 기록(conntrack)을 노드A만 갖고 있어서 원래대로(보낸 사람 = .240) 되돌릴 수 있기 때문이다. 그래서 보낸 사람을 노드A로 바꿔치고, 그 대가로 앱에는 손님이 전부 노드A로 보인다.
 - 실측 (2026-11-11): hello 응답의 `X-Forwarded-For: 10.42.3.1` = bank-w3의 `cni0` 주소 (노드 자신). Traefik이 같은 w3에 있어서 flannel을 거치지 않았는데도 바뀌었다 → 원인은 flannel이 아니라 `externalTrafficPolicy: Cluster`(기본값)의 SNAT이다.
-- 📌 **2주 차에 복습 예정** (1주 차에는 이해가 덜 됨): 아래 X-Forwarded-For 부분
+- 추가 실측 (2026-11-11, 2주 차 복습). 맥북 = 172.30.1.33, `.240` 대표 노드 = w3 (`arp -an`의 MAC이 w3과 같음), Traefik = w3:
+
+  | 들어온 곳 | Traefik이 본 손님 (XFF) | 정체 |
+  | --- | --- | --- |
+  | `.240` (w3) | `10.42.3.1` | w3의 `cni0` |
+  | w3 NodePort `:31805` | `10.42.3.1` | w3의 `cni0` |
+  | w1 NodePort `:31805` (Traefik 없음) | `10.42.2.0` | **w1의 `flannel.1`** (w1이 SNAT한 뒤 터널로 보냄) |
+
+  → 손님 IP 대신 "어느 노드로 들어왔는지"가 찍힌다.
+- **같은 노드인데도 SNAT되는 이유 (w3의 `iptables-save -t nat`):**
+  ```
+  -A KUBE-SERVICES -d 172.30.1.240/32 --dport 80 -j KUBE-EXT-UQMC...
+  -A KUBE-EXT-UQMC... "masquerade traffic for ... external destinations" -j KUBE-MARK-MASQ   ← ① SNAT 도장
+  -A KUBE-EXT-UQMC... -j KUBE-SVC-UQMC...                                                   ← ② 그다음 파드 선택
+  -A KUBE-POSTROUTING ... -j MASQUERADE                                                      ← ③ 도장 찍힌 패킷의 보낸 사람 = 노드
+  ```
+  도장(①)이 파드 선택(②)보다 먼저라서, `Cluster` 정책은 같은 노드든 아니든 외부 트래픽을 전부 SNAT한다.
+- 📌 **보류 (2026-11-11):** `externalTrafficPolicy: Local` 적용 전후 비교는 하지 않았다. 개발자 판단: 위에서부터 설명을 덧붙이는 것으로는 직관이 안 생기고, **netfilter 처리 단계(PREROUTING → 라우팅 → POSTROUTING), DNAT/SNAT, conntrack을 밑에서부터 딥다이브**해야 한다. 그때 아래 X-Forwarded-For 부분과 Local 실측을 함께 한다.
 - **Traefik → 다른 노드의 파드 구간은?** 바꿔치기가 없다. 실측 (Traefik on w3 → hello on w1):
   ```
   RemoteAddr:      10.42.3.2   ← 실제 연결 상대 = Traefik 파드 (노드 IP 아님)

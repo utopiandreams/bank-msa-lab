@@ -98,7 +98,7 @@
 ### Phase 1. 뼈대 (1~4주)
 - [x] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
 - [ ] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `account` 서비스를 Argo CD로 클러스터에 배포
-  - 📌 복습 (세션 시작 시 먼저): **X-Forwarded-For와 고객 IP 유실.** 1주 차에 이해가 덜 됐다고 개발자가 요청함. `docs/infra/notes/k8s-service-networking.md`의 "파드가 없는 노드의 NodePort로 오면…" 섹션을 바탕으로, 쉬운 비유와 클러스터 실측으로 다시 설명한다 (RemoteAddr vs X-Forwarded-For, 입구 SNAT, `externalTrafficPolicy: Local`, Spring `forward-headers-strategy`, 헤더 위조)
+  - 복습 완료 (2026-11-11): MetalLB / kube-proxy / flannel / Traefik 역할 분담. X-Forwarded-For 부분은 보류 (아래 백로그)
 - [ ] 3주: `transfer`·`ledger` 추가, 동기 REST로 송금 동작, `gateway` 라우팅 + JWT 인증 필터
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
@@ -126,6 +126,9 @@
 ### Phase 6. 정리 (18~19주)
 - [ ] 18주: README에 아키텍처·실험 결과 정리, 컨트롤 패널로 장애→회복을 보여주는 2분 시연 영상(GIF), 이력서 업데이트
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
+
+### 백로그 (여유 있는 주에 끼워 넣기)
+- [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
 Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮길 것을 전제로** 시나리오를 `load-test/`에 하나씩 분리해 둔다. 실험 스위치도 처음부터 설정값으로 바꿀 수 있게 만든다 (하드코딩 금지).
 
