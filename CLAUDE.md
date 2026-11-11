@@ -130,6 +130,7 @@
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
+- [ ] **공통 Helm 차트 복습:** JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
 Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮길 것을 전제로** 시나리오를 `load-test/`에 하나씩 분리해 둔다. 실험 스위치도 처음부터 설정값으로 바꿀 수 있게 만든다 (하드코딩 금지).
@@ -139,7 +140,7 @@ Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮�
 이 프로젝트는 **개발자가 배우는 것**이 목적이다. 코드를 빨리 많이 만드는 것보다 개발자가 이해하고 설명할 수 있는 것이 우선이다.
 
 **역할 분담:** Claude는 팀장/시니어 역할로 **요구사항(티켓)을 주고, 리뷰하고, 막히면 돕는다.** 코드는 개발자가 직접 짠다. Claude는 개발자가 구체적으로 지시한 부분, 또는 개발자가 준 수도코드만 구현한다. 시키지 않은 코드는 짜지 않는다 (보일러플레이트도 포함).
-**예외 — 인프라:** `infra/`(Terraform, 스크립트)와 `deploy/`(Helm, Argo CD, k8s 매니페스트)는 Claude가 직접 작성한다. 대신 결정 이유와 실무 포인트를 짧게 설명하고 `docs/infra/`에 기록한다.
+**예외 — 인프라:** `infra/`(Terraform, 스크립트), `deploy/`(Dockerfile, Helm, Argo CD, k8s 매니페스트), `.github/`(CI 워크플로)는 Claude가 직접 작성한다. 대신 결정 이유와 실무 포인트를 짧게 설명하고 `docs/infra/`에 기록한다.
 
 1. **작업 전에 계획부터.** 이번 세션에서 할 일을 3~5단계로 제안하고 동의를 받은 뒤 시작한다. 계획은 진행하면서 바뀔 수 있다.
 2. **티켓 형식.** 배경(실무에서 왜 중요한가) / 요구사항 / 완료 조건 / 생각해 볼 질문.

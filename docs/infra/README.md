@@ -94,6 +94,10 @@
 | Ingress | k3s 기본 Traefik | 추가 설치 없음. Gateway API로 전환은 필요할 때 검토 |
 | GitOps | Argo CD, App of Apps (`deploy/argocd/root.yaml` → `deploy/argocd/apps/`) | 확정. 최초 1회만 Helm으로 설치하고, 이후 모든 설치는 Git으로 |
 | Git 저장소 | `git@github.com:utopiandreams/bank-msa-lab.git` | 확정 |
+| 컨테이너 이미지 | 공통 Dockerfile 하나 (`deploy/docker/spring-boot.Dockerfile`): jar는 Gradle이 만들고 Docker는 레이어로 풀어서 포장만, `eclipse-temurin:25-jre`, 비root(uid 10001), `MaxRAMPercentage=75` | 내부가 다 보여서 설명하기 쉽다 (Jib·Buildpacks는 편하지만 감춰짐). 코드만 바뀐 재배포는 수십 KB 레이어만 새로 받는다 |
+| 레지스트리 | GHCR (`ghcr.io/utopiandreams/<서비스>`, public) | 무료, GitHub Actions에서 토큰 없이 push, public이라 클러스터에 pull secret 불필요 |
+| 이미지 태그 갱신 | CI(GitHub Actions)가 values 파일의 태그를 커밋 해시로 고쳐 커밋 | 가장 흔한 방식. Argo CD Image Updater는 구성 요소가 하나 늘고 메모리도 빠듯하다. `latest`는 쓰지 않는다 |
+| 서비스 매니페스트 | 공통 Helm 차트 하나(`deploy/helm/spring-service`) + 서비스별 values | 서비스 6개의 Deployment·Service·Ingress가 거의 같다. 프로브·리소스 제한을 빠뜨린 서비스가 구조적으로 안 나온다 |
 
 ### 사용법
 
@@ -143,10 +147,30 @@ deploy/
 │   └── apps/                   # 여기에 Application 파일을 추가하면 Argo CD가 설치
 │       ├── metallb.yaml          (wave 0, 공식 Helm 차트)
 │       ├── metallb-config.yaml   (wave 1, IP 풀)
-│       └── hello.yaml            (wave 2)
+│       ├── hello.yaml            (wave 2)
+│       └── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
-└── apps/hello/                 # Deployment, Service, Ingress
+├── docker/spring-boot.Dockerfile  # 모든 Spring 서비스 공통 Dockerfile
+├── helm/spring-service/        # 모든 Spring 서비스 공통 차트 (Deployment, Service, Ingress)
+└── apps/
+    ├── hello/                  # Deployment, Service, Ingress (평문 매니페스트)
+    └── core/values.yaml        # core 배포 설정. image.tag는 CI가 갱신
 ```
+
+서비스 배포 흐름 (`.github/workflows/services.yaml`):
+```
+services/ 등 push → 테스트 → amd64 이미지 → ghcr.io/utopiandreams/<서비스>:<커밋해시>
+  → deploy/apps/<서비스>/values.yaml의 tag 커밋 (github-actions[bot]) → Argo CD 반영 → 롤링 업데이트
+```
+
+새 서비스 추가: ① 워크플로 `matrix.service`에 이름 추가 ② `deploy/apps/<서비스>/values.yaml` ③ `deploy/argocd/apps/<서비스>.yaml` (core.yaml 복사). 첫 push 후 GHCR 패키지를 public으로 바꾼다.
+
+공통 차트의 실무 포인트:
+- **CPU limit 없음, 메모리 limit만.** JVM 기동 때 CPU 스로틀링 → startupProbe 실패 → 재시작 루프를 피한다. 힙은 메모리 limit의 75%.
+- **프로브 3종.** startup(기동 끝날 때까지 나머지 보류) / liveness(실패 시 재시작 → 재시작으로 낫는 것만) / readiness(실패 시 Service에서 제외).
+- **종료 순서.** preStop sleep 5초(엔드포인트 제거가 Traefik까지 퍼질 시간) → SIGTERM → Spring graceful shutdown → `terminationGracePeriodSeconds` 45초 후 SIGKILL.
+- **무중단 롤링.** `maxUnavailable: 0`, `maxSurge: 1` → replicas 1이어도 새 파드가 Ready 된 뒤에 기존 파드를 내린다.
+- **보안 기본값.** 비root(uid 10001), 읽기 전용 루트 파일시스템(+ `/tmp` emptyDir), capability 전부 제거.
 
 GitOps 함정 메모:
 - **sync-wave는 Application 사이에서 "준비될 때까지" 기다려 주지 않는다** (Argo CD는 기본적으로 Application의 health를 판정하지 않음). 그래서 metallb-config에 `retry` + `SkipDryRunOnMissingResource`를 넣어, MetalLB CRD와 웹훅이 뜰 때까지 재시도하게 했다.
