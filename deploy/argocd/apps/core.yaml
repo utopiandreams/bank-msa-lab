@@ -1,0 +1,27 @@
+# core 서비스: 공통 차트 + core values
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: core
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/helm/spring-service
+    helm:
+      releaseName: core
+      valueFiles:
+        - ../../apps/core/values.yaml   # 차트 경로 기준 상대 경로 (같은 레포 안이면 허용)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank   # 모든 뱅킹 서비스를 한 네임스페이스에 둔다 (12주 차 RBAC의 단위)
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

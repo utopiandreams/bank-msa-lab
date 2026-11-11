@@ -1,0 +1,12 @@
+# core 서비스 배포 설정. 공통 차트(deploy/helm/spring-service)의 기본값 위에 덮어쓴다.
+name: core
+
+image:
+  repository: ghcr.io/utopiandreams/core
+  # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
+  tag: "bootstrap"
+
+# 지금은 확인용으로 외부에 연다 → http://core.172.30.1.240.nip.io
+# 3주 차에 gateway가 생기면 닫고, 외부 요청은 gateway를 거치게 한다.
+ingress:
+  enabled: true
