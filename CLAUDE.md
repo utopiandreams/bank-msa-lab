@@ -46,7 +46,8 @@
 
 ## 3. 기술 스택
 
-- **언어/프레임워크:** Kotlin, Spring Boot 3.x, Spring Data JPA, Gradle (Kotlin DSL) 멀티모듈
+- **언어/프레임워크:** Kotlin, Java 25 (LTS), Spring Boot 4.1.x, Spring Cloud 2025.1.x, Spring Data JPA, Gradle (Kotlin DSL) 멀티모듈
+  - 2026-11-11 결정: Boot 3.x는 Initializr에서 더 이상 선택할 수 없어서 4.1(당시 안정 기본값)로 정했다. Java 25는 가상 스레드 pinning 해결(JEP 491)을 14주 차 실험에서 21과 비교하려고 골랐다.
 - **게이트웨이:** Spring Cloud Gateway (WebFlux, Netty)
 - **메시징:** Kafka (Strimzi 오퍼레이터)
 - **저장소:** PostgreSQL (서비스별 DB), Redis
