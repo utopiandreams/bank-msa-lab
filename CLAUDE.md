@@ -132,6 +132,7 @@
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
+- [ ] **스토리지 복습 (PVC · PV · 마운트, CloudNativePG):** PVC(요청서) → PV(실제 디스크) → volumeMounts(컨테이너 경로) 연결, local-path가 노드에 묶이는 한계, 오퍼레이터가 대신 만들어 주는 것. 실습: DB 파드 삭제 후 데이터 유지 확인, DB가 올라간 노드 끄기. 재료: `deploy/platform/core-db/cluster.yaml`, `kubectl -n bank get pvc,pv`. 늦어도 17주 차(DB 다운 실험) 전에
 - [ ] **배포 파이프라인 복습 (Dockerfile · CI · 공통 Helm 차트):** Dockerfile 최적화(레이어 분리로 코드만 바뀌면 수십 KB만 전송, 멀티스테이지, 비root), CI 워크플로 세부(캐시, `concurrency`, amd64 지정, 태그 커밋 충돌 처리), 그리고 차트: JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
@@ -148,6 +149,7 @@ Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮�
 2. **티켓 형식.** 배경(실무에서 왜 중요한가) / 요구사항 / 완료 조건 / 생각해 볼 질문.
 3. **실무 가치를 항상 밝힌다.** 각 작업이 실제 현업에서 어떤 사고·문제로 이어지는지 설명한다. 실무와 거리가 있거나 면접 가치가 낮은 부분은 솔직하게 말한다.
 3-1. **핵심 로직은 설명과 함께.** 사가, Outbox, 락, 멱등 처리 같은 핵심 부분은 왜 그렇게 짜는지, 다른 선택지는 무엇인지 설명한다. 정답을 바로 주기보다 힌트부터 준다.
+3-2. **DDD 용어를 짚어 준다.** 티켓·리뷰에서 해당하는 DDD 개념이 나오면 "DDD 용어로는 ○○"라고 연결한다 (바운디드 컨텍스트, 애그리거트, ACL 등). 이 프로젝트는 DDD 프로젝트가 아니므로 과장하지 않는다.
 4. **문제를 먼저 재현한다.** 해결책을 넣기 전에 문제가 실제로 일어나는 테스트나 k6 시나리오를 먼저 만든다. 재현이 안 되면 해결도 증명할 수 없다.
 5. **모르면 추측하지 않는다.** 클러스터 상태, 버전, 설정을 모르면 확인 명령을 제안하거나 묻는다.
 6. **작게 커밋한다.** 한 커밋에 한 가지 변경. 커밋 메시지는 한국어로 `[서비스] 무엇을 왜` 형식.
@@ -158,6 +160,8 @@ Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮�
 ## 7. 코드 컨벤션
 
 - 패키지 구조는 서비스마다 `api`(컨트롤러·DTO) / `application`(유스케이스) / `domain` / `infrastructure`(JPA·Kafka·외부 연동).
+- `core`는 모듈 먼저, 그 안에 계층: `lab.bank.core.<account|ledger>.{api, application, domain, infrastructure}`. 다른 모듈은 모듈 루트 패키지의 공개 클래스만 쓴다.
+- 서비스별 아키텍처 (2026-11-12 결정): `core`는 **JPA 엔티티가 곧 도메인** (락·트랜잭션 실험이 `@Version`·더티 체킹·비관적 락과 붙어 있어서). `transfer`는 **헥사고날** (core·`bank-mock`·DB·Kafka 등 외부 의존이 많고, 포트를 가짜로 바꿔 타임아웃·결과 불명을 테스트하기 위해). 면접 포인트: 서비스 성격에 따라 아키텍처를 다르게 골랐다.
 - 금액은 `Long`(원 단위) 또는 `BigDecimal`. `Double`은 절대 쓰지 않는다.
 - 상태 변경은 도메인 메서드로만 한다. 엔티티의 setter를 밖에서 호출하지 않는다.
 - 모든 Kafka 컨슈머는 멱등해야 한다. 이벤트에는 고유 `eventId`를 넣는다.
