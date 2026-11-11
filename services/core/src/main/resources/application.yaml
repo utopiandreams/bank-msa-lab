@@ -1,3 +1,10 @@
 spring:
   application:
     name: core
+  jpa:
+    hibernate:
+      ddl-auto: validate      # 테이블은 Flyway만 만든다. JPA는 엔티티와 테이블이 맞는지 검사만
+    open-in-view: false       # 트랜잭션이 끝난 뒤(컨트롤러·뷰)에 지연 로딩으로 DB를 다시 치지 않게
+  # 접속 정보(spring.datasource.*)는 여기 쓰지 않는다
+  #   클러스터: CloudNativePG Secret → 환경변수 (deploy/apps/core/values.yaml)
+  #   테스트:   Testcontainers @ServiceConnection (TestcontainersConfiguration)
