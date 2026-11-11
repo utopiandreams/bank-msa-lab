@@ -59,6 +59,7 @@
 - [x] ARP 확인: 맥북의 `.240` MAC(`bc:24:11:90:48:f0`) = bank-w3의 MAC → bank-w3의 speaker가 대표로 대답 중
 - [x] 개발자 직접 확인: Git 수정(hello v2, replicas 3) → push → 자동 반영 / `kubectl delete deployment` → Argo CD가 몇 초 안에 재생성 (self-heal)
 - [x] Argo CD admin 비밀번호 변경, 초기 비밀번호 Secret 삭제
+- [x] (2026-11-12) core 서비스 첫 배포: GitHub Actions가 `ghcr.io/utopiandreams/core:<sha>` push + values 태그 커밋 → Argo CD가 `bank` 네임스페이스에 배포 → `http://core.172.30.1.240.nip.io/actuator/health` UP. 이미지 pull부터 Ready까지 약 14초. GHCR 패키지는 public 상태에서 pull 성공
 
 ### 노드
 
@@ -203,6 +204,7 @@ GitOps 함정 메모:
 - kube-apiserver: `https://172.30.1.230:6443` (kubeconfig: `~/.kube/bank-msa-lab.yaml`, 레포 밖)
 - Argo CD UI: `http://argocd.172.30.1.240.nip.io` (admin / 비밀번호: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`)
 - hello 테스트 앱: `http://hello.172.30.1.240.nip.io`
+- core: `http://core.172.30.1.240.nip.io/actuator/health` (3주 차 gateway가 생기면 닫는다)
 
 ## 7. 트러블슈팅 로그
 

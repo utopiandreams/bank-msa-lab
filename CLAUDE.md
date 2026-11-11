@@ -92,15 +92,17 @@
 
 ## 5. 로드맵과 현재 진행 상황
 
-**현재: Phase 1 / 2주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
+**현재: Phase 1 / 3주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
 > 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
 ### Phase 1. 뼈대 (1~4주)
 - [x] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
-- [ ] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `core` 서비스(account 모듈부터)를 Argo CD로 클러스터에 배포
+- [x] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `core` 서비스(account 모듈부터)를 Argo CD로 클러스터에 배포
   - [x] ADR-0001 승인 (2026-11-11): 코어 모놀리스 + 주변 MSA. 면접 30초 답변은 개발자가 작성 예정
   - 복습 완료 (2026-11-11): MetalLB / kube-proxy / flannel / Traefik 역할 분담. X-Forwarded-For 부분은 보류 (아래 백로그)
+  - [x] 배포 파이프라인 완료 (2026-11-12): push → CI(테스트·amd64 이미지·GHCR·태그 커밋) → Argo CD → `http://core.172.30.1.240.nip.io/actuator/health` UP
+  - [ ] 개발자 티켓 남음: core `application.yaml`에 프로브·actuator 노출·graceful shutdown을 명시 (Boot 4 기본값 확인 후 명시) → 3주 차 시작 전에
 - [ ] 3주: `core`에 `ledger` 모듈 추가(당행 송금 = 로컬 트랜잭션), `transfer` 추가(`transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
@@ -130,7 +132,7 @@
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
-- [ ] **공통 Helm 차트 복습:** JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
+- [ ] **배포 파이프라인 복습 (Dockerfile · CI · 공통 Helm 차트):** Dockerfile 최적화(레이어 분리로 코드만 바뀌면 수십 KB만 전송, 멀티스테이지, 비root), CI 워크플로 세부(캐시, `concurrency`, amd64 지정, 태그 커밋 충돌 처리), 그리고 차트: JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
 Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮길 것을 전제로** 시나리오를 `load-test/`에 하나씩 분리해 둔다. 실험 스위치도 처음부터 설정값으로 바꿀 수 있게 만든다 (하드코딩 금지).
