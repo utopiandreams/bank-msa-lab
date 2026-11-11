@@ -1,0 +1,34 @@
+# core 서비스 전용 PostgreSQL (DB per service). CloudNativePG 오퍼레이터가 이 선언을 보고 실제 자원을 만든다.
+#
+# 오퍼레이터가 만들어 주는 것:
+#   - 파드 core-db-1 + PVC (local-path)
+#   - Service core-db-rw (쓰기, primary) / core-db-ro (읽기, replica) / core-db-r (아무 인스턴스)
+#   - Secret core-db-app (username, password, uri, jdbc-uri …) ← core가 이걸로 접속
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: core-db
+spec:
+  # 지금은 1대. 17주 차 "DB 다운" 실험 때 2~3대로 늘려 페일오버를 본다
+  instances: 1
+
+  bootstrap:
+    initdb:
+      database: core   # DB 이름
+      owner: core      # 앱 계정 (비밀번호는 오퍼레이터가 생성해 Secret core-db-app에 넣는다)
+
+  storage:
+    size: 5Gi          # StorageClass는 기본값(local-path). 노드에 묶인다는 한계는 docs/infra 참고
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  postgresql:
+    parameters:
+      # 메모리 limit 512Mi에 맞춘다 (기본값은 더 큰 서버 기준)
+      shared_buffers: "128MB"
+      max_connections: "100"

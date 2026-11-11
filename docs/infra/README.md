@@ -99,6 +99,7 @@
 | 레지스트리 | GHCR (`ghcr.io/utopiandreams/<서비스>`, public) | 무료, GitHub Actions에서 토큰 없이 push, public이라 클러스터에 pull secret 불필요 |
 | 이미지 태그 갱신 | CI(GitHub Actions)가 values 파일의 태그를 커밋 해시로 고쳐 커밋 | 가장 흔한 방식. Argo CD Image Updater는 구성 요소가 하나 늘고 메모리도 빠듯하다. `latest`는 쓰지 않는다 |
 | 서비스 매니페스트 | 공통 Helm 차트 하나(`deploy/helm/spring-service`) + 서비스별 values | 서비스 6개의 Deployment·Service·Ingress가 거의 같다. 프로브·리소스 제한을 빠뜨린 서비스가 구조적으로 안 나온다 |
+| PostgreSQL | CloudNativePG 오퍼레이터 1.30.1 (차트 0.29.1) + 서비스마다 `Cluster` 하나 (`deploy/platform/<서비스>-db`) | 쿠버네티스 위 Postgres의 사실상 표준. 계정·Secret·접속 Service·페일오버를 오퍼레이터가 맡는다. 17주 차 DB 다운 실험에서 instances를 늘려 페일오버를 본다. DB 앱은 `prune: false`로 Git에서 지워도 자동 삭제되지 않게 했다 |
 
 ### 사용법
 
@@ -149,8 +150,11 @@ deploy/
 │       ├── metallb.yaml          (wave 0, 공식 Helm 차트)
 │       ├── metallb-config.yaml   (wave 1, IP 풀)
 │       ├── hello.yaml            (wave 2)
+│       ├── cnpg-operator.yaml    (wave 0, CloudNativePG 공식 차트)
+│       ├── core-db.yaml          (wave 1, core 전용 Postgres)
 │       └── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
+├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
 ├── docker/spring-boot.Dockerfile  # 모든 Spring 서비스 공통 Dockerfile
 ├── helm/spring-service/        # 모든 Spring 서비스 공통 차트 (Deployment, Service, Ingress)
 └── apps/
