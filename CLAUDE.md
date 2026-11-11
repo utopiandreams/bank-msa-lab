@@ -94,7 +94,7 @@
 
 **현재: Phase 1 / 3주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
-> 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
+> 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주 → 2026-11-12 3주 차를 2주로 늘려 총 20주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
 ### Phase 1. 뼈대 (1~4주)
 - [x] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
@@ -103,7 +103,13 @@
   - 복습 완료 (2026-11-11): MetalLB / kube-proxy / flannel / Traefik 역할 분담. X-Forwarded-For 부분은 보류 (아래 백로그)
   - [x] 배포 파이프라인 완료 (2026-11-12): push → CI(테스트·amd64 이미지·GHCR·태그 커밋) → Argo CD → `http://core.172.30.1.240.nip.io/actuator/health` UP
   - [ ] 개발자 티켓 남음: core `application.yaml`에 프로브·actuator 노출·graceful shutdown을 명시 (Boot 4 기본값 확인 후 명시) → 3주 차 시작 전에
-- [ ] 3주: `core`에 `ledger` 모듈 추가(당행 송금 = 로컬 트랜잭션), `transfer` 추가(`transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터
+- [ ] 3주 (**2주로 늘림**, 2026-11-12): 아래 3-1, 3-2
+  - 이유: 2주 차는 배포 파이프라인까지만 해서 core에 도메인·DB가 없었다. "돈이 움직이는 트랜잭션"은 이 프로젝트의 심장이라 서두르지 않는다. 이후 주차 번호는 문서 곳곳에서 참조하므로 **바꾸지 않고**, 3주 차만 2주로 쓴다 (총 20주)
+  - [ ] 3-1주: PostgreSQL(CloudNativePG), `core` account 모듈, `ledger` 모듈 + 송금 처리 API(로컬 트랜잭션, 송금 ID 멱등, 상태 조회), 입출금 API
+    - [x] CloudNativePG 오퍼레이터 + `core-db` (PostgreSQL 18.6) (2026-11-12)
+    - [x] 티켓 A: account 모듈 — 계좌 개설·조회 API, 입출금 도메인 규칙, 업무 예외, 단위·리포지토리 테스트 13개. 클러스터에서 Flyway V1 적용·개설·조회 확인 (2026-11-12)
+    - [ ] 티켓 B: ledger 모듈 + 거래 처리(입금·출금·당행 송금). 시작 전 질문: "잔액 변경과 원장 기록을 항상 한 곳에서" 하려면 그 유스케이스를 어느 패키지에 둘까 (구조 그림을 그려 와서 리뷰)
+  - [ ] 3-2주: `transfer` 추가(헥사고날, `transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터(인증은 gateway, 인가는 서비스)
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가
@@ -132,6 +138,7 @@
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
+- [ ] **Flyway 복습 (다음 세션 첫 순서):** 번호 붙은 SQL을 순서대로 한 번씩만 실행, `flyway_schema_history` 기록 테이블, 이미 적용된 파일을 고치면 안 되는 이유(체크섬). 실습: 클러스터 DB에서 기록 테이블 조회 → V2 추가해 push → 적용 확인
 - [ ] **스토리지 복습 (PVC · PV · 마운트, CloudNativePG):** PVC(요청서) → PV(실제 디스크) → volumeMounts(컨테이너 경로) 연결, local-path가 노드에 묶이는 한계, 오퍼레이터가 대신 만들어 주는 것. 실습: DB 파드 삭제 후 데이터 유지 확인, DB가 올라간 노드 끄기. 재료: `deploy/platform/core-db/cluster.yaml`, `kubectl -n bank get pvc,pv`. 늦어도 17주 차(DB 다운 실험) 전에
 - [ ] **배포 파이프라인 복습 (Dockerfile · CI · 공통 Helm 차트):** Dockerfile 최적화(레이어 분리로 코드만 바뀌면 수십 KB만 전송, 멀티스테이지, 비root), CI 워크플로 세부(캐시, `concurrency`, amd64 지정, 태그 커밋 충돌 처리), 그리고 차트: JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
