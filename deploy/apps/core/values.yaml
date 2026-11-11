@@ -4,7 +4,7 @@ name: core
 image:
   repository: ghcr.io/utopiandreams/core
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
-  tag: "6003d0692e277960b31a644bf11b0fe3157937ba"
+  tag: "34767690b99f22bfc96e33ab060072bc5668eb92"
 
 # DB 접속: CloudNativePG가 만든 Secret core-db-app에서 꺼낸다 (deploy/platform/core-db)
 # Spring은 SPRING_DATASOURCE_URL 같은 환경변수를 spring.datasource.url로 읽는다 (relaxed binding)
