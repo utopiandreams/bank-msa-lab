@@ -15,6 +15,9 @@ containerPort: 8080
 # 컨테이너 환경변수 (이름: 값)
 env: {}
 
+# Secret에서 꺼내는 환경변수 (이름: {secret: <Secret 이름>, key: <키>}). 비밀번호는 values에 직접 쓰지 않는다
+secretEnv: {}
+
 resources:
   requests:
     cpu: 100m

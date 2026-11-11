@@ -33,11 +33,18 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
-          {{- with .Values.env }}
+          {{- if or .Values.env .Values.secretEnv }}
           env:
-            {{- range $k, $v := . }}
+            {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
+            {{- end }}
+            {{- range $k, $v := .Values.secretEnv }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $v.secret }}
+                  key: {{ $v.key }}
             {{- end }}
           {{- end }}
           # startup: 기동 완료 전까지 liveness·readiness를 보류 (느린 기동을 죽음으로 오해하지 않게)
