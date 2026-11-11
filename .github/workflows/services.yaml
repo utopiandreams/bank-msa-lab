@@ -1,0 +1,83 @@
+# 서비스 CI: 테스트 → 이미지 빌드(amd64) → GHCR push → deploy/apps/<서비스>/values.yaml 태그 커밋
+# 그다음은 Argo CD가 Git 변경을 보고 배포한다 (CI는 클러스터에 접근하지 않는다).
+name: services
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "settings.gradle.kts"
+      - "deploy/docker/**"
+      - ".github/workflows/services.yaml"
+  workflow_dispatch:   # GitHub UI에서 수동 실행
+
+# 동시에 두 번 돌면 values 커밋이 서로 충돌한다 → 하나씩
+concurrency:
+  group: services-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # values 태그 커밋
+  packages: write   # GHCR push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [core]   # 서비스가 생기면 여기에 추가
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.service }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: 테스트 + jar 빌드
+        run: ./gradlew :services:${{ matrix.service }}:build
+
+      - name: jar 파일 이름 찾기 (-plain.jar 제외)
+        id: jar
+        run: |
+          echo "name=$(basename $(ls services/${{ matrix.service }}/build/libs/*.jar | grep -v -- '-plain.jar'))" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: 이미지 빌드·push
+        uses: docker/build-push-action@v7
+        with:
+          context: services/${{ matrix.service }}/build/libs
+          file: deploy/docker/spring-boot.Dockerfile
+          build-args: JAR_FILE=${{ steps.jar.outputs.name }}
+          platforms: linux/amd64   # 클러스터 노드가 amd64 (맥북 arm64에서 빌드한 이미지는 노드에서 못 돈다)
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      # GITHUB_TOKEN으로 한 push는 워크플로를 다시 트리거하지 않는다 → 무한 루프 없음
+      - name: values 태그 갱신 커밋
+        run: |
+          f=deploy/apps/${{ matrix.service }}/values.yaml
+          sed -i -E "s|^(  tag: ).*|\1\"${TAG}\"|" "$f"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$f"
+          git commit -m "[deploy] ${{ matrix.service }} 이미지 ${TAG::7} 배포"
+          # 그 사이 main에 다른 커밋이 들어왔으면 위에 얹어서 다시 push
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 3; done
