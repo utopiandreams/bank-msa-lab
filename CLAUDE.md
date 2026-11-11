@@ -16,9 +16,8 @@
 | 서비스 | 역할 |
 | --- | --- |
 | `gateway` | Spring Cloud Gateway (WebFlux, 논블로킹). 라우팅, JWT 인증, Idempotency-Key 검사 |
-| `account` | 계좌와 잔액 관리 |
-| `transfer` | 송금 요청 수신, 오케스트레이션 사가로 전체 흐름 지휘 |
-| `ledger` | 복식부기 원장 기록, 대사(reconciliation)의 기준 |
+| `core` | 계정계 코어. 모듈형 모놀리스(DB 하나): `account` 모듈(계좌·잔액) + `ledger` 모듈(복식부기 원장, 대사의 기준). 송금 ID 기준 멱등 처리, 상태 조회 API |
+| `transfer` | 송금 요청 기록과 상태 머신, 상태 조회로 결과 불명 해소, 타행 이체 사가 지휘 |
 | `notification` | 송금 결과 알림. Kafka 이벤트 구독 |
 | `bank-mock` | 외부 은행 Mock. 지연·실패·타임아웃을 설정으로 주입할 수 있어야 함 |
 | `chaos-control` | 컨트롤 패널의 백엔드. k6-operator로 부하 실행, Chaos Mesh로 파드 종료·네트워크 지연, 각 서비스의 실험 스위치 변경, 진행 상황을 SSE로 전달 |
@@ -33,13 +32,15 @@
 [web] ◀──iframe── Grafana (Prometheus · Tempo · Loki)
 ```
 
+구조 결정 (상세: `docs/adr/0001-transfer-usecase-and-service-boundaries.md`): **계정계 코어 모놀리스 + 주변 MSA.** 당행 이체는 코어 안의 로컬 트랜잭션, 분산 경계는 실제로 갈라지는 곳(`transfer ↔ core`, `core ↔ bank-mock`)에 둔다. 사가는 롤백할 수 없는 외부가 끼는 타행 이체에서 다룬다.
+
 도메인 원칙 (상세: `docs/domain/README.md`):
 - **상품의 가짓수가 아니라 "돈이 움직이는 방식"을 실제 금융처럼 만든다.** 입출금 계좌 하나 + 복식부기 원장, 거래 불변, 결과 불명 상태, 일일 대사, 감사 로그, 멱등성. 적금·여신·카드는 만들지 않는다.
 - **원장이 진실(source of truth).** 타행 이체는 미정산 임시 계정을 거친다.
-- 금융결제원은 따로 만들지 않고 `bank-mock`이 외부 결제망 전체를 대표한다. 2~5주 차는 당행 이체만, 타행은 8주 차.
+- 금융결제원은 따로 만들지 않고 `bank-mock`이 외부 결제망 전체를 대표한다. 2~4주 차는 당행 이체만, 타행은 5주 차(사가)에 추가하고 8주 차에 결과 불명·대사를 더한다.
 
 원칙:
-- **DB per service.** 서비스끼리 DB를 공유하지 않는다. 다른 서비스의 데이터는 API나 이벤트로만 얻는다.
+- **DB per service.** 서비스끼리 DB를 공유하지 않는다. `core` 안의 `account`·`ledger` 모듈은 DB 하나를 쓰되 스키마를 나누고, 서로의 테이블에 직접 접근하지 않고 공개 인터페이스로만 호출한다. 다른 서비스의 데이터는 API나 이벤트로만 얻는다.
 - 서비스 간 비동기 통신은 Kafka, 파티션 키는 기본적으로 계좌 ID.
 - 이벤트 발행은 Phase 2부터 반드시 Transactional Outbox를 거친다.
 
@@ -66,9 +67,8 @@
 ├── gradle/libs.versions.toml
 ├── services/
 │   ├── gateway/
-│   ├── account/
+│   ├── core/              # account · ledger 모듈
 │   ├── transfer/
-│   ├── ledger/
 │   ├── notification/
 │   ├── bank-mock/
 │   └── chaos-control/
@@ -97,16 +97,17 @@
 
 ### Phase 1. 뼈대 (1~4주)
 - [x] 1주: 인프라 — Terraform으로 Proxmox VM 프로비저닝, k8s 클러스터, 스토리지 클래스, LoadBalancer·Ingress, Argo CD 설치. 완료 조건: Git push → Argo CD 동기화 → 브라우저에서 hello 앱 접속. (Kafka·관측성·Chaos Mesh는 필요한 주차에 설치)
-- [ ] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `account` 서비스를 Argo CD로 클러스터에 배포
+- [ ] 2주: 송금 유스케이스·서비스 경계 정리(ADR), 멀티모듈 레포 생성, `core` 서비스(account 모듈부터)를 Argo CD로 클러스터에 배포
+  - [x] ADR-0001 승인 (2026-11-11): 코어 모놀리스 + 주변 MSA. 면접 30초 답변은 개발자가 작성 예정
   - 복습 완료 (2026-11-11): MetalLB / kube-proxy / flannel / Traefik 역할 분담. X-Forwarded-For 부분은 보류 (아래 백로그)
-- [ ] 3주: `transfer`·`ledger` 추가, 동기 REST로 송금 동작, `gateway` 라우팅 + JWT 인증 필터
+- [ ] 3주: `core`에 `ledger` 모듈 추가(당행 송금 = 로컬 트랜잭션), `transfer` 추가(`transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가
-- [ ] 5주: 출금 → 입금 → 원장 기록을 오케스트레이션 사가로 구현, 입금 실패 시 보상 트랜잭션 검증, 코레오그래피와 비교 정리
+- [ ] 5주: 타행 이체를 오케스트레이션 사가로 구현 (코어 출금 → `bank-mock` 송금 → 실패 시 출금 보상, `bank-mock`은 단순 성공/실패), 코레오그래피와 비교 정리
 - [ ] 6주: 커밋과 발행 사이 장애로 이벤트 유실 재현 → Outbox로 해결, 커밋 직전 컨슈머 종료로 중복 수신 재현 → 멱등 컨슈머로 해결
 - [ ] 7주: 동시 출금으로 잔액 깨짐 재현, 낙관적 락·비관적 락·Redis 분산 락을 k6로 비교
-- [ ] 8주: Idempotency-Key 기반 중복 송금 방지, 타행 이체 추가(`bank-mock` 연동, 미정산 계정), 외부 은행 타임아웃 시 상태 조회 + 일일 대사 배치 (+ 이자 일배치와 실시간 송금 경합 검토)
+- [ ] 8주: Idempotency-Key 기반 중복 송금 방지, 타행 이체에 미정산 계정·타임아웃·결과 불명 추가, 상태 조회 + 일일 대사 배치 (+ 이자 일배치와 실시간 송금 경합 검토)
 
 ### Phase 3. 관측성 (9~11주)
 - [ ] 9주: OpenTelemetry로 gateway → 서비스 → Kafka → 컨슈머까지 하나의 트레이스로 연결 (Tempo)
@@ -218,7 +219,7 @@ Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮�
 ```bash
 # 빌드 / 테스트
 ./gradlew build
-./gradlew :services:account:test
+./gradlew :services:core:test
 
 # 로컬 실행
 # TODO
