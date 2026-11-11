@@ -227,7 +227,16 @@ MetalLB 설치 전에는 ②~⑥만 있고 ①이 없다 → `<pending>`.
   -A KUBE-POSTROUTING ... -j MASQUERADE                                                      ← ③ 도장 찍힌 패킷의 보낸 사람 = 노드
   ```
   도장(①)이 파드 선택(②)보다 먼저라서, `Cluster` 정책은 같은 노드든 아니든 외부 트래픽을 전부 SNAT한다.
-- 📌 **보류 (2026-11-11):** `externalTrafficPolicy: Local` 적용 전후 비교는 하지 않았다. 개발자 판단: 위에서부터 설명을 덧붙이는 것으로는 직관이 안 생기고, **netfilter 처리 단계(PREROUTING → 라우팅 → POSTROUTING), DNAT/SNAT, conntrack을 밑에서부터 딥다이브**해야 한다. 그때 아래 X-Forwarded-For 부분과 Local 실측을 함께 한다.
+- **`externalTrafficPolicy: Local` 적용 후 실측 (2026-11-11, `kubectl patch`로 적용, Git 미반영):**
+
+  | 들어온 곳 | Cluster | Local |
+  | --- | --- | --- |
+  | `.240` (w3) | `10.42.3.1` | `172.30.1.33` (맥북) ✅ |
+  | w3 NodePort (Traefik 있음) | `10.42.3.1` | `172.30.1.33` ✅ |
+  | w1 NodePort (Traefik 없음) | `10.42.2.0` | 응답 없음 ❌ |
+
+  규칙 변화: 무조건 찍던 SNAT 도장이 `--src-type LOCAL`(노드 자신이 보낸 것)에만 남고, 마지막 목적지가 `KUBE-SVC`(전체 파드) → `KUBE-SVL`(이 노드의 파드만)로 바뀐다. MetalLB는 Traefik 파드가 있는 노드에서만 `.240`을 알리므로 `.240`은 계속 동작한다.
+- 📌 **딥다이브 보류 (2026-11-11):** 결과는 확인했지만 원리의 직관은 아직이다. 개발자 판단: **netfilter 처리 단계(PREROUTING → 라우팅 → POSTROUTING), DNAT/SNAT, conntrack을 밑에서부터** 공부해야 한다. 그때 아래 X-Forwarded-For 부분(Spring `forward-headers-strategy`, 헤더 위조)을 함께 본다.
 - **Traefik → 다른 노드의 파드 구간은?** 바꿔치기가 없다. 실측 (Traefik on w3 → hello on w1):
   ```
   RemoteAddr:      10.42.3.2   ← 실제 연결 상대 = Traefik 파드 (노드 IP 아님)
