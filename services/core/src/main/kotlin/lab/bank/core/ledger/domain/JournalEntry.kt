@@ -54,6 +54,14 @@ class JournalEntry private constructor(
         lines.forEach { it.attachTo(this) }
     }
 
+    // 멱등 판정: 같은 키로 온 요청이 처음 요청과 같은 내용인가. 요청 필드(종류·계좌·금액)가 분개 줄에 전부 남아 있어서
+    // 해시를 따로 저장하지 않고 "거래 종류 + 분개 줄 구성"을 비교한다. 줄 순서는 보장되지 않아서 개수 세기(멀티셋)로 비교
+    fun isSameRequestAs(other: JournalEntry): Boolean =
+        type == other.type && lineSignature() == other.lineSignature()
+
+    private fun lineSignature(): Map<List<Any?>, Int> =
+        _lines.groupingBy { listOf(it.ledgerAccount, it.accountId, it.direction, it.amount) }.eachCount()
+
     // 분개 규칙은 ledger가 갖는다. 고객 예금은 늘면 대변, 줄면 차변. 현금은 그 반대
     companion object {
         fun deposit(idempotencyKey: String, accountId: UUID, amount: Long) = JournalEntry(

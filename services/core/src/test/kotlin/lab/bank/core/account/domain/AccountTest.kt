@@ -5,6 +5,7 @@ import lab.bank.core.account.domain.exception.InvalidAmountException
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
@@ -30,7 +31,7 @@ class AccountTest {
         fun `입금하면 잔액이 늘어난다`() {
             val newAccount = newAccount()
             val depositAmount = 10_000L
-            newAccount.deposit(depositAmount)
+            newAccount.deposit(depositAmount, UUID.randomUUID())
             assertEquals(10_000L, newAccount.balance)
         }
 
@@ -38,14 +39,14 @@ class AccountTest {
         fun `0원 입금은 거절한다`() {
             val newAccount = newAccount()
             val depositAmount = 0L
-            assertFailsWith<InvalidAmountException> { newAccount.deposit(depositAmount) }
+            assertFailsWith<InvalidAmountException> { newAccount.deposit(depositAmount, UUID.randomUUID()) }
         }
 
         @Test
         fun `음수 금액 입금은 거절한다`() {
             val newAccount = newAccount()
             val depositAmount = -10_000L
-            assertFailsWith<InvalidAmountException> { newAccount.deposit(depositAmount) }
+            assertFailsWith<InvalidAmountException> { newAccount.deposit(depositAmount, UUID.randomUUID()) }
         }
 
         @Test
@@ -53,7 +54,7 @@ class AccountTest {
             val newAccount = newAccount()
             val depositAmount = 10_000L
             val beforeUpdateAt = newAccount.updatedAt
-            newAccount.deposit(depositAmount)
+            newAccount.deposit(depositAmount, UUID.randomUUID())
             val afterUpdateAt = newAccount.updatedAt
             assertNotEquals(beforeUpdateAt, afterUpdateAt)
         }
@@ -64,12 +65,12 @@ class AccountTest {
     inner class Withdraw {
 
         // 10_000원 들어 있는 계좌
-        private fun accountWithBalance(balance: Long = 10_000L) = newAccount().apply { deposit(balance) }
+        private fun accountWithBalance(balance: Long = 10_000L) = newAccount().apply { deposit(balance, UUID.randomUUID()) }
 
         @Test
         fun `잔액 안에서 출금하면 잔액이 줄어든다`() {
             val account = accountWithBalance(10_000L)
-            account.withdraw(3_000L)
+            account.withdraw(3_000L, UUID.randomUUID())
             assertEquals(7_000L, account.balance)
         }
 
@@ -77,7 +78,7 @@ class AccountTest {
         fun `잔액 전부를 출금할 수 있다`() {
             // 경계값: 잔액 == 출금액 → 성공, 잔액 0원 (balance < amount 를 <= 로 잘못 쓰면 여기서 걸린다)
             val account = accountWithBalance(10_000L)
-            account.withdraw(10_000L)
+            account.withdraw(10_000L, UUID.randomUUID())
             assertEquals(0L, account.balance)
         }
 
@@ -85,22 +86,22 @@ class AccountTest {
         fun `잔액보다 많이 출금하면 거절하고 잔액은 그대로다`() {
             // 경계값: 잔액 + 1원
             val account = accountWithBalance(10_000L)
-            assertFailsWith<InsufficientBalanceException> { account.withdraw(10_001L) }
+            assertFailsWith<InsufficientBalanceException> { account.withdraw(10_001L, UUID.randomUUID()) }
             assertEquals(10_000L, account.balance)   // 거절만이 아니라 잔액이 안 바뀌었는지까지
         }
 
         @Test
         fun `0원 출금은 거절한다`() {
             val account = accountWithBalance(10_000L)
-            assertFailsWith<InvalidAmountException> { account.withdraw(0L) }
+            assertFailsWith<InvalidAmountException> { account.withdraw(0L, UUID.randomUUID()) }
             assertEquals(10_000L, account.balance)
         }
 
         @Test
         fun `음수 금액 출금은 거절한다`() {
-            // 리뷰의 🔴 케이스: withdraw(-1_000_000)으로 돈이 생기면 안 된다
+            // 리뷰의 🔴 케이스: withdraw(-1_000_000, UUID.randomUUID())으로 돈이 생기면 안 된다
             val account = accountWithBalance(10_000L)
-            assertFailsWith<InvalidAmountException> { account.withdraw(-1_000_000L) }
+            assertFailsWith<InvalidAmountException> { account.withdraw(-1_000_000L, UUID.randomUUID()) }
             assertEquals(10_000L, account.balance)
         }
     }

@@ -24,7 +24,7 @@ class Account(
     var balance: Long = 0
         protected set
 
-    // 마지막 원장 ID (티켓 B에서 원장을 남길 때 채운다)
+    // 마지막 원장 거래 ID. 잔액을 바꾼 거래를 가리킨다 (입출금 메서드가 함께 채운다)
     var lastLedgerId: UUID? = null
         protected set
 
@@ -39,16 +39,20 @@ class Account(
     var version: Long? = null
         protected set
 
-    fun withdraw(amount: Long) {
+    // 잔액 변경은 원장 거래 ID가 있어야만 할 수 있다: 원장 없이 잔액만 바뀌는 경로를 시그니처로 막는다.
+    // 다른 모듈의 엔티티(JournalEntry)가 아니라 ID만 받는다 (모듈 경계)
+    fun withdraw(amount: Long, ledgerEntryId: UUID) {
         if (amount <= 0) { throw InvalidAmountException(amount) }
         if (balance < amount) { throw InsufficientBalanceException(id, amount) }
         balance -= amount
+        lastLedgerId = ledgerEntryId
         updatedAt = Instant.now()
     }
 
-    fun deposit(amount: Long) {
+    fun deposit(amount: Long, ledgerEntryId: UUID) {
         if (amount <= 0) { throw InvalidAmountException(amount) }
         balance += amount
+        lastLedgerId = ledgerEntryId
         updatedAt = Instant.now()
     }
 
