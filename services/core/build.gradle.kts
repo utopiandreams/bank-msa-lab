@@ -26,6 +26,7 @@ dependencies {
 	testImplementation("org.testcontainers:testcontainers-postgresql")        // Testcontainers 2.x 모듈 이름
 	testImplementation("org.testcontainers:testcontainers-junit-jupiter")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+	testImplementation(libs.mockito.kotlin)                                   // 동시성 테스트에서 spy로 실행 순서를 강제
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

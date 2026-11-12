@@ -4,10 +4,13 @@ spring-boot = "4.1.2"
 spring-dependency-management = "1.1.7"
 junit = "6.0.3"            # Spring Boot 4.1.2가 관리하는 버전과 맞춤 (spring-boot-dependencies의 junit-jupiter.version)
 
+mockito-kotlin = "6.4.0"   # Spring Boot가 관리하지 않아서 직접 지정. Mockito를 Kotlin답게 (whenever, any(), doAnswer)
+
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
