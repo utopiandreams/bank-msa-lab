@@ -152,14 +152,18 @@ deploy/
 │       ├── hello.yaml            (wave 2)
 │       ├── cnpg-operator.yaml    (wave 0, CloudNativePG 공식 차트)
 │       ├── core-db.yaml          (wave 1, core 전용 Postgres)
-│       └── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
+│       ├── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
+│       ├── transfer-db.yaml      (wave 1, transfer 전용 Postgres)
+│       └── transfer.yaml         (wave 2, 공통 차트 + transfer values)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
 ├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
+├── platform/transfer-db/       # CloudNativePG Cluster (Secret transfer-db-app, Service transfer-db-rw)
 ├── docker/spring-boot.Dockerfile  # 모든 Spring 서비스 공통 Dockerfile
 ├── helm/spring-service/        # 모든 Spring 서비스 공통 차트 (Deployment, Service, Ingress)
 └── apps/
     ├── hello/                  # Deployment, Service, Ingress (평문 매니페스트)
-    └── core/values.yaml        # core 배포 설정. image.tag는 CI가 갱신
+    ├── core/values.yaml        # core 배포 설정. image.tag는 CI가 갱신
+    └── transfer/values.yaml    # transfer 배포 설정 (2026-11-13 추가)
 ```
 
 서비스 배포 흐름 (`.github/workflows/services.yaml`):

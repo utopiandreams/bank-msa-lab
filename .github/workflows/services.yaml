@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [core]   # 서비스가 생기면 여기에 추가
+        service: [core, transfer]   # 서비스가 생기면 여기에 추가
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.service }}
       TAG: ${{ github.sha }}
