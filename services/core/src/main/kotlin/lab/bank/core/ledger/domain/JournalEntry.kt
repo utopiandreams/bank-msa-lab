@@ -31,9 +31,8 @@ class JournalEntry private constructor(
     @Column(nullable = false, updatable = false)
     val createdAt: Instant = Instant.now()
 
-    // 단방향 1:N. 줄은 거래와 함께 저장된다
-    @OneToMany(cascade = [CascadeType.PERSIST], fetch = FetchType.LAZY)
-    @JoinColumn(name = "entry_id", nullable = false, updatable = false)
+    // 양방향 1:N. FK의 주인은 JournalLine.entry (mappedBy). 줄은 거래와 함께 저장된다 (cascade)
+    @OneToMany(mappedBy = "entry", cascade = [CascadeType.PERSIST], fetch = FetchType.LAZY)
     private val _lines: MutableList<JournalLine> = lines.toMutableList()
 
     val lines: List<JournalLine> get() = _lines.toList()
@@ -50,6 +49,9 @@ class JournalEntry private constructor(
         val debit = lines.filter { it.direction == Direction.DEBIT }.sumOf { it.amount }
         val credit = lines.filter { it.direction == Direction.CREDIT }.sumOf { it.amount }
         require(debit == credit) { "차변 합($debit)과 대변 합($credit)이 다르다" }
+
+        // 양방향 연관관계의 양쪽을 함께 맞춘다. 한쪽만 넣으면 entry_id가 비어서 INSERT가 실패한다
+        lines.forEach { it.attachTo(this) }
     }
 
     // 분개 규칙은 ledger가 갖는다. 고객 예금은 늘면 대변, 줄면 차변. 현금은 그 반대
