@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 
 // 업무 예외 → HTTP 응답 (RFC 9457 Problem Details 형식)
 // 도메인은 HTTP를 모르고, HTTP 상태 코드를 정하는 건 api 계층의 몫이다
-@RestControllerAdvice(basePackageClasses = [AccountExceptionHandler::class])
+// 전역 advice: 계좌 예외는 account API뿐 아니라 거래 API(posting)에서도 난다 (없는 계좌로 입금, 잔액 부족 출금)
+@RestControllerAdvice
 class AccountExceptionHandler {
 
     @ExceptionHandler(AccountException::class)

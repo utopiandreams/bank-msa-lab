@@ -66,6 +66,9 @@ class PostingUseCaseImpl(
         }
 
 
+    override fun find(idempotencyKey: IdempotencyKey): PostingView? =
+        ledgerUseCase.findEntry(idempotencyKey)?.let { PostingView(it.entryId, it.type, it.createdAt) }
+
     /**
      * 같은 키 요청 두 개가 동시에 들어오면 둘 다 "기존 거래 없음"을 보고 진행하고, 늦은 쪽이 UNIQUE 위반으로 실패한다.
      * 실패한 트랜잭션 안에서는 수습할 수 없다 (PostgreSQL: current transaction is aborted / Spring: rollback-only).

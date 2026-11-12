@@ -26,6 +26,11 @@ class LedgerUseCaseImpl(
     override fun recordTransfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): RecordedEntry =
         record(JournalEntry.transfer(idempotencyKey, fromAccountId, toAccountId, amount))
 
+    @Transactional(readOnly = true)
+    override fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary? =
+        journalEntryRepository.findByIdempotencyKey(idempotencyKey.value)
+            ?.let { EntrySummary(it.id, it.type.name, it.createdAt) }
+
     // 출금·송금도 같은 흐름이라 공통으로 둔다 (팩토리만 다르다)
     private fun record(candidate: JournalEntry): RecordedEntry {
         journalEntryRepository.findByIdempotencyKey(candidate.idempotencyKey)

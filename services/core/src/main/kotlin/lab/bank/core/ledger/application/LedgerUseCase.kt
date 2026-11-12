@@ -15,4 +15,7 @@ interface LedgerUseCase {
     fun recordDeposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
     fun recordWithdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
     fun recordTransfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): RecordedEntry
+
+    // 상태 조회: 그 키로 커밋된 거래가 있으면 요약, 없으면 null
+    fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary?
 }
