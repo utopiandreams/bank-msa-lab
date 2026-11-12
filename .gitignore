@@ -20,6 +20,8 @@ kubeconfig*
 build/
 !gradle/wrapper/gradle-wrapper.jar
 out/
+# 단, 소스 안의 out 패키지는 코드다 (헥사고날의 port/out). 이게 없으면 포트가 커밋에서 빠져 CI만 깨진다 (2026-11-13)
+!**/src/**/out/
 .kotlin/
 
 # Frontend
