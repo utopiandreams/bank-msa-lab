@@ -11,3 +11,4 @@ dependencyResolutionManagement {
 rootProject.name = "bank-msa-lab"
 
 include(":services:core")
+include(":services:transfer")

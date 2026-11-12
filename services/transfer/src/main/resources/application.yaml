@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: transfer
+  jpa:
+    hibernate:
+      ddl-auto: validate      # 테이블은 Flyway만 만든다. JPA는 엔티티와 테이블이 맞는지 검사만
+    open-in-view: false
+  # 접속 정보(spring.datasource.*)는 여기 쓰지 않는다
+  #   클러스터: CloudNativePG Secret → 환경변수 (deploy/apps/transfer/values.yaml)
+  #   테스트:   Testcontainers @ServiceConnection (TestcontainersConfiguration)
+  lifecycle:
+    timeout-per-shutdown-phase: 30s   # preStop 5초 + 30초 < terminationGracePeriodSeconds 45초 (deploy/helm/spring-service)
+
+# 쿠버네티스가 기대는 설정. 기본값과 같지만 버전업으로 바뀌지 않게 명시한다
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+server:
+  shutdown: graceful
