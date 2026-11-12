@@ -170,6 +170,7 @@ Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮�
 - 패키지 구조는 서비스마다 `api`(컨트롤러·DTO) / `application`(유스케이스) / `domain` / `infrastructure`(JPA·Kafka·외부 연동).
 - `core`는 모듈 먼저, 그 안에 계층: `lab.bank.core.<account|ledger>.{api, application, domain, infrastructure}`. 다른 모듈은 모듈 루트 패키지의 공개 클래스만 쓴다.
 - 서비스별 아키텍처 (2026-11-12 결정): `core`는 **JPA 엔티티가 곧 도메인** (락·트랜잭션 실험이 `@Version`·더티 체킹·비관적 락과 붙어 있어서). `transfer`는 **헥사고날** (core·`bank-mock`·DB·Kafka 등 외부 의존이 많고, 포트를 가짜로 바꿔 타임아웃·결과 불명을 테스트하기 위해). 면접 포인트: 서비스 성격에 따라 아키텍처를 다르게 골랐다.
+- 파일 하나에 최상위 선언 하나 (2026-11-12 결정, 긴 파일은 읽기 힘들어서). enum도 각자 파일로. 예외: Request/Response DTO는 모듈별 `api/<Module>Dtos.kt` 한 파일에 모은다. sealed 예외 계층(`<Module>Exception.kt`)도 한 파일에 둔다 (하위 타입 목록이 한눈에 보여야 해서).
 - 금액은 `Long`(원 단위) 또는 `BigDecimal`. `Double`은 절대 쓰지 않는다.
 - 상태 변경은 도메인 메서드로만 한다. 엔티티의 setter를 밖에서 호출하지 않는다.
 - 모든 Kafka 컨슈머는 멱등해야 한다. 이벤트에는 고유 `eventId`를 넣는다.
