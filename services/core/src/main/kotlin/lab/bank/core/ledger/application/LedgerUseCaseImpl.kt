@@ -5,6 +5,8 @@ import lab.bank.core.ledger.domain.exception.IdempotencyConflictException
 import lab.bank.core.ledger.infrastructure.JournalEntryRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import lab.bank.core.shared.Amount
+import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
 
 @Service
@@ -13,15 +15,15 @@ class LedgerUseCaseImpl(
 ) : LedgerUseCase {
 
     @Transactional
-    override fun recordDeposit(idempotencyKey: String, accountId: UUID, amount: Long): RecordedEntry =
+    override fun recordDeposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry =
         record(JournalEntry.deposit(idempotencyKey, accountId, amount))
 
     @Transactional
-    override fun recordWithdraw(idempotencyKey: String, accountId: UUID, amount: Long): RecordedEntry =
+    override fun recordWithdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry =
         record(JournalEntry.withdrawal(idempotencyKey, accountId, amount))
 
     @Transactional
-    override fun recordTransfer(idempotencyKey: String, fromAccountId: UUID, toAccountId: UUID, amount: Long): RecordedEntry =
+    override fun recordTransfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): RecordedEntry =
         record(JournalEntry.transfer(idempotencyKey, fromAccountId, toAccountId, amount))
 
     // 출금·송금도 같은 흐름이라 공통으로 둔다 (팩토리만 다르다)

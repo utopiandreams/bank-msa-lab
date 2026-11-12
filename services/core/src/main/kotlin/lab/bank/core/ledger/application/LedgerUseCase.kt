@@ -1,5 +1,7 @@
 package lab.bank.core.ledger.application
 
+import lab.bank.core.shared.Amount
+import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
 
 // ledger 모듈의 공개 인터페이스. posting은 리포지토리나 엔티티가 아니라 이것만 쓴다
@@ -10,7 +12,7 @@ interface LedgerUseCase {
      * - 같은 키 + 같은 내용이면 기존 거래 → replayed = true (호출자는 잔액을 다시 바꾸면 안 된다)
      * - 같은 키 + 다른 내용이면 IdempotencyConflictException
      */
-    fun recordDeposit(idempotencyKey: String, accountId: UUID, amount: Long): RecordedEntry
-    fun recordWithdraw(idempotencyKey: String, accountId: UUID, amount: Long): RecordedEntry
-    fun recordTransfer(idempotencyKey: String, fromAccountId: UUID, toAccountId: UUID, amount: Long): RecordedEntry
+    fun recordDeposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
+    fun recordWithdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
+    fun recordTransfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): RecordedEntry
 }

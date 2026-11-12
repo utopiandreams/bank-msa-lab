@@ -2,7 +2,7 @@ package lab.bank.core.account.domain
 
 import jakarta.persistence.*
 import lab.bank.core.account.domain.exception.InsufficientBalanceException
-import lab.bank.core.account.domain.exception.InvalidAmountException
+import lab.bank.core.shared.Amount
 import java.time.Instant
 import java.util.*
 
@@ -41,17 +41,15 @@ class Account(
 
     // 잔액 변경은 원장 거래 ID가 있어야만 할 수 있다: 원장 없이 잔액만 바뀌는 경로를 시그니처로 막는다.
     // 다른 모듈의 엔티티(JournalEntry)가 아니라 ID만 받는다 (모듈 경계)
-    fun withdraw(amount: Long, ledgerEntryId: UUID) {
-        if (amount <= 0) { throw InvalidAmountException(amount) }
-        if (balance < amount) { throw InsufficientBalanceException(id, amount) }
-        balance -= amount
+    fun withdraw(amount: Amount, ledgerEntryId: UUID) {
+        if (balance < amount.value) { throw InsufficientBalanceException(id, amount.value) }
+        balance -= amount.value
         lastLedgerId = ledgerEntryId
         updatedAt = Instant.now()
     }
 
-    fun deposit(amount: Long, ledgerEntryId: UUID) {
-        if (amount <= 0) { throw InvalidAmountException(amount) }
-        balance += amount
+    fun deposit(amount: Amount, ledgerEntryId: UUID) {
+        balance += amount.value
         lastLedgerId = ledgerEntryId
         updatedAt = Instant.now()
     }

@@ -2,9 +2,9 @@ package lab.bank.core.posting.application
 
 import lab.bank.core.account.application.AccountUseCase
 import lab.bank.core.ledger.application.LedgerUseCase
-import lab.bank.core.posting.application.exception.InvalidIdempotencyKeyException
-import lab.bank.core.posting.application.exception.InvalidPostingAmountException
 import lab.bank.core.posting.application.exception.SameAccountTransferException
+import lab.bank.core.shared.Amount
+import lab.bank.core.shared.IdempotencyKey
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -22,45 +22,22 @@ class PostingUseCaseImpl(
     private val ledgerUseCase: LedgerUseCase,
 ) : PostingUseCase {
 
-    // 입구 검증은 트랜잭션·재시도보다 먼저: 잘못된 요청은 DB 커넥션을 잡기 전에 돌려보낸다
-    override fun deposit(idempotencyKey: String, accountId: UUID, amount: Long): PostingResult {
-        validateIdempotencyKey(idempotencyKey)
-        validateAmount(amount)
-        return retryOnceOnDuplicateKey { depositInTransaction(idempotencyKey, accountId, amount) }
-    }
+    // 금액·멱등 키 검증은 여기 없다: Amount·IdempotencyKey 타입을 받았다는 것 자체가 이미 검증됐다는 뜻이다
+    override fun deposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
+        retryOnceOnDuplicateKey { depositInTransaction(idempotencyKey, accountId, amount) }
 
-    override fun withdraw(idempotencyKey: String, accountId: UUID, amount: Long): PostingResult {
-        validateIdempotencyKey(idempotencyKey)
-        validateAmount(amount)
-        return retryOnceOnDuplicateKey { withdrawInTransaction(idempotencyKey, accountId, amount) }
-    }
+    override fun withdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
+        retryOnceOnDuplicateKey { withdrawInTransaction(idempotencyKey, accountId, amount) }
 
-    override fun transfer(idempotencyKey: String, fromAccountId: UUID, toAccountId: UUID, amount: Long): PostingResult {
-        validateIdempotencyKey(idempotencyKey)
-        validateAmount(amount)
+    override fun transfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult {
+        // 값 하나로는 알 수 없고 필드 두 개를 함께 봐야 하는 규칙이라 값 객체가 아니라 여기서 검사한다.
+        // 트랜잭션·재시도보다 먼저: 잘못된 요청은 DB 커넥션을 잡기 전에 돌려보낸다
         if (fromAccountId == toAccountId) throw SameAccountTransferException(fromAccountId)
         return retryOnceOnDuplicateKey { transferInTransaction(idempotencyKey, fromAccountId, toAccountId, amount) }
     }
 
-    private fun validateAmount(amount: Long) {
-        if (amount <= 0) throw InvalidPostingAmountException(amount)
-    }
-
-    // 길이 제한은 DB 컬럼(varchar(64))과 맞춘다. 안 막으면 INSERT에서 DataIntegrityViolationException이 나서
-    // 아래 중복 키 재시도에 잘못 잡히고(한 번 더 시도), 결국 500으로 나간다. 고객이 고칠 수 있는 문제인데 서버 장애처럼 보인다
-    private fun validateIdempotencyKey(idempotencyKey: String) {
-        if (idempotencyKey.isBlank()) throw InvalidIdempotencyKeyException("비어 있음")
-        if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
-            throw InvalidIdempotencyKeyException("${MAX_IDEMPOTENCY_KEY_LENGTH}자 초과 (${idempotencyKey.length}자)")
-        }
-    }
-
-    companion object {
-        private const val MAX_IDEMPOTENCY_KEY_LENGTH = 64
-    }
-
     // 원장 기록과 잔액 변경이 한 트랜잭션: 둘 다 되거나 둘 다 안 된다
-    private fun depositInTransaction(idempotencyKey: String, accountId: UUID, amount: Long): PostingResult =
+    private fun depositInTransaction(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
         transactionTemplate.execute {
             val recorded = ledgerUseCase.recordDeposit(idempotencyKey, accountId, amount)
             // 이미 처리된 요청이면 잔액을 다시 바꾸지 않는다 (멱등의 핵심)
@@ -70,7 +47,7 @@ class PostingUseCaseImpl(
             PostingResult(recorded.entryId, recorded.replayed)
         }
 
-    private fun withdrawInTransaction(idempotencyKey: String, accountId: UUID, amount: Long): PostingResult =
+    private fun withdrawInTransaction(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
         transactionTemplate.execute {
             val recordResult = ledgerUseCase.recordWithdraw(idempotencyKey, accountId, amount)
             if (!recordResult.replayed) {
@@ -79,7 +56,7 @@ class PostingUseCaseImpl(
             PostingResult(recordResult.entryId, recordResult.replayed)
         }
 
-    private fun transferInTransaction(idempotencyKey: String, fromAccountId: UUID, toAccountId: UUID, amount: Long): PostingResult =
+    private fun transferInTransaction(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult =
         transactionTemplate.execute {
             val recordResult = ledgerUseCase.recordTransfer(idempotencyKey, fromAccountId, toAccountId, amount)
             if (!recordResult.replayed) {

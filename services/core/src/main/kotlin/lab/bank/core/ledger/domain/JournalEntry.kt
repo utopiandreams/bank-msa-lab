@@ -2,6 +2,8 @@ package lab.bank.core.ledger.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import lab.bank.core.shared.Amount
+import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
 
 /**
@@ -64,28 +66,28 @@ class JournalEntry private constructor(
 
     // 분개 규칙은 ledger가 갖는다. 고객 예금은 늘면 대변, 줄면 차변. 현금은 그 반대
     companion object {
-        fun deposit(idempotencyKey: String, accountId: UUID, amount: Long) = JournalEntry(
-            idempotencyKey, EntryType.DEPOSIT,
+        fun deposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount) = JournalEntry(
+            idempotencyKey.value, EntryType.DEPOSIT,
             listOf(
-                JournalLine(LedgerAccount.CASH, null, Direction.DEBIT, amount),
-                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, accountId, Direction.CREDIT, amount),
+                JournalLine(LedgerAccount.CASH, null, Direction.DEBIT, amount.value),
+                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, accountId, Direction.CREDIT, amount.value),
             ),
         )
 
-        fun withdrawal(idempotencyKey: String, accountId: UUID, amount: Long) = JournalEntry(
-            idempotencyKey, EntryType.WITHDRAWAL,
+        fun withdrawal(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount) = JournalEntry(
+            idempotencyKey.value, EntryType.WITHDRAWAL,
             listOf(
-                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, accountId, Direction.DEBIT, amount),
-                JournalLine(LedgerAccount.CASH, null, Direction.CREDIT, amount),
+                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, accountId, Direction.DEBIT, amount.value),
+                JournalLine(LedgerAccount.CASH, null, Direction.CREDIT, amount.value),
             ),
         )
 
         // 당행 송금: 예금(빚)이 A에서 B로 옮겨 갈 뿐, 현금은 등장하지 않는다
-        fun transfer(idempotencyKey: String, from: UUID, to: UUID, amount: Long) = JournalEntry(
-            idempotencyKey, EntryType.TRANSFER,
+        fun transfer(idempotencyKey: IdempotencyKey, from: UUID, to: UUID, amount: Amount) = JournalEntry(
+            idempotencyKey.value, EntryType.TRANSFER,
             listOf(
-                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, from, Direction.DEBIT, amount),
-                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, to, Direction.CREDIT, amount),
+                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, from, Direction.DEBIT, amount.value),
+                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, to, Direction.CREDIT, amount.value),
             ),
         )
     }

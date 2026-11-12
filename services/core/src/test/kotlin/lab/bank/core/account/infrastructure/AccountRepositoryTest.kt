@@ -8,6 +8,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager
 import org.springframework.context.annotation.Import
+import lab.bank.core.shared.Amount
 import java.util.UUID
 import kotlin.test.assertEquals
 
@@ -33,7 +34,7 @@ class AccountRepositoryTest {
         assertEquals(0L, account.version)
 
         // when: 입금만 하고 save()는 부르지 않는다
-        account.deposit(10_000L, UUID.randomUUID())
+        account.deposit(Amount(10_000), UUID.randomUUID())
         em.flush()   // 더티 체킹: 트랜잭션 안에서 바뀐 엔티티를 찾아 UPDATE를 보낸다 (version도 +1)
         em.clear()   // 1차 캐시를 비워서, 다음 조회가 메모리가 아니라 DB에서 읽게 한다
 

@@ -18,9 +18,6 @@ sealed class AccountException(
 class AccountNotFoundException(accountId: UUID) :
     AccountException("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다: $accountId")
 
-class InvalidAmountException(amount: Long) :
-    AccountException("INVALID_AMOUNT", "금액은 0보다 커야 합니다: $amount")
-
 // 잔액은 메시지에 넣지 않는다: 메시지는 로그·응답으로 퍼지기 쉽고, 잔액은 민감 정보다
 class InsufficientBalanceException(accountId: UUID, amount: Long) :
     AccountException("INSUFFICIENT_BALANCE", "잔고가 부족합니다: 계좌 $accountId, 요청 금액 ${amount}원")

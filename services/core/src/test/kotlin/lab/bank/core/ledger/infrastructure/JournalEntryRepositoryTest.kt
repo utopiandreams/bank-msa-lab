@@ -12,6 +12,8 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
+import lab.bank.core.shared.Amount
+import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -42,7 +44,7 @@ class JournalEntryRepositoryTest {
 
     @Test
     fun `입금 거래를 저장하면 거래 1행과 분개 줄 2행이 들어간다`() {
-        val journal = JournalEntry.deposit("key-1", UUID.randomUUID(), 100_000)
+        val journal = JournalEntry.deposit(IdempotencyKey("key-1"), UUID.randomUUID(), Amount(100_000))
         saveAndClear(journal)
 
         // findByIdOrNull: Optional 대신 null을 주는 Spring Data의 Kotlin 확장 함수
@@ -56,7 +58,7 @@ class JournalEntryRepositoryTest {
 
     @Test
     fun `저장된 거래의 차변 합과 대변 합이 같다`() {
-        val journal = JournalEntry.transfer("key-1", UUID.randomUUID(), UUID.randomUUID(), 100_000)
+        val journal = JournalEntry.transfer(IdempotencyKey("key-1"), UUID.randomUUID(), UUID.randomUUID(), Amount(100_000))
         saveAndClear(journal)
 
         val saved = assertNotNull(journalEntryRepository.findByIdOrNull(journal.id))
@@ -71,19 +73,19 @@ class JournalEntryRepositoryTest {
     @Test
     fun `같은 멱등 키로 거래를 두 번 저장하면 UNIQUE 위반이 난다`() {
         val accountId = UUID.randomUUID()
-        journalEntryRepository.saveAndFlush(JournalEntry.deposit("key-1", accountId, 10_000))
+        journalEntryRepository.saveAndFlush(JournalEntry.deposit(IdempotencyKey("key-1"), accountId, Amount(10_000)))
 
         // 재시도로 같은 요청이 한 번 더 들어온 상황: 거래 ID는 새로 만들어졌지만 멱등 키가 같다
         // Hibernate/JDBC 예외를 Spring이 DB 종류와 무관한 DataIntegrityViolationException 계열로 바꿔 준다
         // → posting은 이 타입을 잡아서 "이미 처리됨"으로 바꾼다 (PostgreSQL 에러 코드에 묶이지 않는다)
         assertFailsWith<DataIntegrityViolationException> {
-            journalEntryRepository.saveAndFlush(JournalEntry.deposit("key-1", accountId, 10_000))
+            journalEntryRepository.saveAndFlush(JournalEntry.deposit(IdempotencyKey("key-1"), accountId, Amount(10_000)))
         }
     }
 
     @Test
     fun `멱등 키로 거래를 조회한다`() {
-        val journal = JournalEntry.deposit("key-1", UUID.randomUUID(), 10_000)
+        val journal = JournalEntry.deposit(IdempotencyKey("key-1"), UUID.randomUUID(), Amount(10_000))
         saveAndClear(journal)
 
         assertEquals(journal.id, journalEntryRepository.findByIdempotencyKey("key-1")?.id)
@@ -92,7 +94,7 @@ class JournalEntryRepositoryTest {
 
     @Test
     fun `거래를 조회해도 분개 줄은 접근하기 전까지 로딩되지 않는다`() {
-        val journal = JournalEntry.deposit("key-1", UUID.randomUUID(), 10_000)
+        val journal = JournalEntry.deposit(IdempotencyKey("key-1"), UUID.randomUUID(), Amount(10_000))
         saveAndClear(journal)
         val util = em.entityManager.entityManagerFactory.persistenceUnitUtil
 
@@ -105,7 +107,7 @@ class JournalEntryRepositoryTest {
 
     @Test
     fun `분개 줄만 조회하면 소속 거래는 지연 로딩된다`() {
-        val journal = JournalEntry.deposit("key-1", UUID.randomUUID(), 10_000)
+        val journal = JournalEntry.deposit(IdempotencyKey("key-1"), UUID.randomUUID(), Amount(10_000))
         val lineId = journal.lines.first().id
         saveAndClear(journal)
         val util = em.entityManager.entityManagerFactory.persistenceUnitUtil
