@@ -4,7 +4,7 @@ name: transfer
 image:
   repository: ghcr.io/utopiandreams/transfer
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
-  tag: "none-yet"
+  tag: "ce3e78d171e2c35562c0a322c7fd0918a7bd23b6"
 
 # DB 접속: CloudNativePG가 만든 Secret transfer-db-app에서 꺼낸다 (deploy/platform/transfer-db)
 env:
