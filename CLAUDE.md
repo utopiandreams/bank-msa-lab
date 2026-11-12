@@ -107,11 +107,11 @@
   - [ ] 개발자 티켓 남음: core `application.yaml`에 프로브·actuator 노출·graceful shutdown을 명시 (Boot 4 기본값 확인 후 명시) → 3주 차 시작 전에
 - [ ] 3주 (**2주로 늘림**, 2026-11-12): 아래 3-1, 3-2
   - 이유: 2주 차는 배포 파이프라인까지만 해서 core에 도메인·DB가 없었다. "돈이 움직이는 트랜잭션"은 이 프로젝트의 심장이라 서두르지 않는다. 이후 주차 번호는 문서 곳곳에서 참조하므로 **바꾸지 않고**, 3주 차만 2주로 쓴다 (총 20주)
-  - [ ] 3-1주: PostgreSQL(CloudNativePG), `core` account 모듈, `ledger` 모듈 + 송금 처리 API(로컬 트랜잭션, 송금 ID 멱등, 상태 조회), 입출금 API
+  - [x] 3-1주: PostgreSQL(CloudNativePG), `core` account 모듈, `ledger` 모듈 + 송금 처리 API(로컬 트랜잭션, 송금 ID 멱등, 상태 조회), 입출금 API
     - [x] CloudNativePG 오퍼레이터 + `core-db` (PostgreSQL 18.6) (2026-11-12)
     - [x] 티켓 A: account 모듈 — 계좌 개설·조회 API, 입출금 도메인 규칙, 업무 예외, 단위·리포지토리 테스트 13개. 클러스터에서 Flyway V1 적용·개설·조회 확인 (2026-11-12)
     - [x] 티켓 B: ledger 모듈 + 거래 처리(입금·출금·당행 송금). posting 모듈이 account·ledger를 한 트랜잭션으로 지휘, 멱등·동시 중복 요청·롤백 통합 테스트, 값 객체(`shared`) (2026-11-13)
-    - [ ] 티켓 C: 거래 HTTP API(입금·출금·송금 + 멱등 키로 상태 조회) + 예외→HTTP 매핑(`SharedException` 400, `IdempotencyConflict` 409 등) + 클러스터 배포·curl 확인
+    - [x] 티켓 C: 거래 HTTP API `/postings` (Idempotency-Key 헤더, 201/200, 상태 조회는 200 + `COMPLETED`/`NOT_PROCESSED`) + 예외 매핑. 클러스터에서 송금·재요청·조회·400/409/422 curl 확인 (2026-11-13)
     - [ ] 오늘 배운 것 정리 (`docs/learning/2026-11-13.md`, 개발자 작성 → Claude 리뷰) → 다음 세션 첫 순서
   - [ ] 3-2주: `transfer` 추가(헥사고날, `transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터(인증은 gateway, 인가는 서비스)
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
