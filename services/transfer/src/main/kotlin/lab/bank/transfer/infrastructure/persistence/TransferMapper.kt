@@ -1,5 +1,6 @@
 package lab.bank.transfer.infrastructure.persistence
 
+import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.Transfer
 
 // 도메인 ↔ 저장 모델 변환. 헥사고날의 대가: 필드를 추가하면 Transfer, TransferJpaEntity, 여기, Flyway 네 군데를 고친다
@@ -9,7 +10,7 @@ object TransferMapper {
         id = transfer.id,
         fromAccountId = transfer.fromAccountId,
         toAccountId = transfer.toAccountId,
-        amount = transfer.amount,
+        amount = transfer.amount.value,   // 값 객체 → 원시 값 (JPA 엔티티는 Long)
         status = transfer.status,
         failureCode = transfer.failureCode,
         coreEntryId = transfer.coreEntryId,
@@ -23,7 +24,7 @@ object TransferMapper {
         id = entity.id,
         fromAccountId = entity.fromAccountId,
         toAccountId = entity.toAccountId,
-        amount = entity.amount,
+        amount = Amount(entity.amount),   // 원시 값 → 값 객체. DB CHECK(amount > 0)가 있어 여기서 터지면 데이터가 깨진 것
         status = entity.status,
         failureCode = entity.failureCode,
         coreEntryId = entity.coreEntryId,

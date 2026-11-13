@@ -1,6 +1,7 @@
 package lab.bank.transfer.infrastructure.persistence
 
 import lab.bank.transfer.TestcontainersConfiguration
+import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.TransferStatus
 import org.junit.jupiter.api.Test
@@ -42,7 +43,7 @@ class TransferPersistenceAdapterTest {
         failureCode: String? = null,
         coreEntryId: UUID? = null,
         version: Long? = null,
-    ) = Transfer(id, from, to, amount, status, failureCode, coreEntryId, now, now, version)
+    ) = Transfer(id, from, to, Amount(amount), status, failureCode, coreEntryId, now, now, version)
 
     // 같은 송금의 "다음 상태"를 복원 생성자로 흉내 낸다 (UNKNOWN → FAILED 경합처럼 전이 순서를 자유롭게 만들려고)
     private fun Transfer.withStatus(status: TransferStatus, failureCode: String? = null, coreEntryId: UUID? = null) =
@@ -56,7 +57,7 @@ class TransferPersistenceAdapterTest {
         val found = assertNotNull(adapter.findById(saved.id))
         assertEquals(saved.fromAccountId, found.fromAccountId)
         assertEquals(saved.toAccountId, found.toAccountId)
-        assertEquals(10_000, found.amount)
+        assertEquals(Amount(10_000), found.amount)
         assertEquals(TransferStatus.PROCESSING, found.status)
         assertEquals(now, found.createdAt)
         assertEquals(0L, found.version)   // 새 엔티티: null → INSERT 후 0

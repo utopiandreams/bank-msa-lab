@@ -15,7 +15,7 @@ class Transfer(
     val id: UUID,
     val fromAccountId: UUID,
     val toAccountId: UUID,
-    val amount: Long,                 // 원 단위
+    val amount: Amount,               // 원 단위, 0보다 큼 (타입이 보장)
     status: TransferStatus,
     failureCode: String?,
     coreEntryId: UUID?,
@@ -41,7 +41,7 @@ class Transfer(
 
     init {
         require(fromAccountId != toAccountId) { "송금 간 계좌가 동일함" }
-        require(amount > 0) { "송금 금액은 0원 보다 커야함" }
+        // 금액 > 0은 Amount 타입이 보장한다
     }
 
     fun startProcessing() = transitTo(TransferStatus.PROCESSING)
@@ -58,7 +58,7 @@ class Transfer(
     }
 
     companion object {
-        fun request(fromAccountId: UUID, toAccountId: UUID, amount: Long): Transfer {
+        fun request(fromAccountId: UUID, toAccountId: UUID, amount: Amount): Transfer {
             val now = Instant.now()
             return Transfer(
                 id = UUID.randomUUID(),

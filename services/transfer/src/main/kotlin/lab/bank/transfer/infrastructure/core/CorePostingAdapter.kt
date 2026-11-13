@@ -27,7 +27,7 @@ class CorePostingAdapter(
                 .uri("/postings/transfers")
                 .header(IDEMPOTENCY_KEY_HEADER, transfer.id.toString())   // 송금 ID = core 쪽 멱등 키
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(CoreTransferRequest(transfer.fromAccountId, transfer.toAccountId, transfer.amount))
+                .body(CoreTransferRequest(transfer.fromAccountId, transfer.toAccountId, transfer.amount.value))
                 // exchange: 4xx·5xx도 예외로 바꾸지 않고 응답을 그대로 받는다 → 분류를 classify 한곳에서 한다
                 .exchange { _, response -> classify(transfer, response) }
         } catch (e: ResourceAccessException) {
