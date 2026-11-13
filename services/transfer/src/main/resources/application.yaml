@@ -11,6 +11,12 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s   # preStop 5초 + 30초 < terminationGracePeriodSeconds 45초 (deploy/helm/spring-service)
 
+# core 호출 (infrastructure/core/CoreClientProperties)
+core:
+  base-url: http://core     # 클러스터 내부 DNS: 같은 네임스페이스의 Service "core"(포트 80). 로컬은 환경변수 CORE_BASE_URL로 덮어쓴다
+  connect-timeout: 1s       # 클러스터 내부라 연결은 ms 단위. 1초 넘으면 core가 없거나 네트워크 문제
+  read-timeout: 3s          # 임시값 (T-1 질문 5번). core 송금은 로컬 트랜잭션 하나라 평소 수십 ms. 10주 차 p99 지표로 근거 있게 조정
+
 # 쿠버네티스가 기대는 설정. 기본값과 같지만 버전업으로 바뀌지 않게 명시한다
 management:
   endpoints:
