@@ -103,6 +103,41 @@
 
 ---
 
+## 2026-11-14 · 3-2주 차 — transfer → core 송금, 결과 불명, 고객 멱등 키
+
+**한 일**
+- 송금 도메인(개발자): 생성 팩토리, 상태 전이 규칙(`canTransitTo`), 의도별 전이 메서드, `require`(인자) / `check`(상태) 구분
+- core 호출 어댑터: RestClient + connect/read 타임아웃(설정값), core 응답 → 완료·거절·결과 불명 분류, 어댑터 테스트 14개 (응답 코드별 + 진짜 소켓으로 read 타임아웃·연결 거부)
+- 송금 use case(개발자): 처리중 커밋 → 트랜잭션 밖 core 호출 → 결과 커밋. 금액 값 객체(`Amount`, 헥사고날이라 도메인 필드로도), 업무 예외 → 400 ProblemDetail, 송금 API(POST 201 + Location, GET)
+- 고객 멱등 키(T-2, 로직은 개발자): Flyway V2(추가 → 채우기 → NOT NULL → UNIQUE), 같은 키 재요청은 기존 송금의 현재 상태(200), UNKNOWN은 같은 송금 ID로 재전송, 내용 다르면 409, 동시 요청은 UNIQUE 위반 → 포트 예외 → 이긴 쪽을 읽어 재요청 처리
+- 클러스터 확인: transfer → core 송금·거절(잔액 부족, 계좌 없음)·400, transfer 송금 ID = core 멱등 키, transfer `coreEntryId` = core 원장 ID, 같은 키 201 → 200·잔액 한 번만·409·400
+- 테스트: transfer 56개 (멱등 명세는 먼저 빨간불로 써 두고 개발자 구현으로 초록)
+
+**결정**
+- **응답 분류 기준: "core가 처리하지 않았음이 확실할 때만 거절".** 409(멱등 충돌)·5xx·2xx인데 body 불가·타임아웃은 결과 불명. UNKNOWN의 정의는 원인이 아니라 "상태 조회로 확정해야 하는 송금"
+- 포트는 예외 대신 sealed 결과(`Completed`/`Rejected`/`Unknown`) → `when`으로 처리 누락을 컴파일러가 잡음. 포트 인자는 `Transfer` 통째로 (보내는/받는 계좌 UUID 순서 실수 방지)
+- REQUESTED는 저장하지 않음 (동기 처리라 PROCESSING과 구별되는 정보가 없음). PROCESSING의 의미는 "호출했을 수도 있다"
+- POST 응답은 결과와 무관하게 201(송금 자원은 생김), 결과는 body `status`. 재요청은 200
+- HTTP 클라이언트는 RestClient `exchange` (블로킹끼리는 차이가 작고, 응답 코드별 분류가 한곳에 보여서). Boot 4 자동 설정 모듈 없이 직접 구성
+- 고객 멱등 키를 8주 차에서 당김: 메커니즘은 core에서 증명했고, transfer에서만 새로 생기는 문제(처리 중이 DB에 보임, UNKNOWN 뒤 재시도)에 집중
+- 멱등 방식: 응답 저장(Stripe)이 아니라 **송금 행 자체가 기록** → 키와 송금이 같은 INSERT라 원자적, 해소된 결과가 최신으로 보임. 그래서 gateway가 아니라 transfer에서 처리. 키 범위는 일단 전역(JWT 생기면 사용자별)
+- UNKNOWN 재전송이 또 모름이면 UNKNOWN → UNKNOWN 전이 허용 (개발자 선택: `updatedAt` = 마지막 시도 시각, 해소 스케줄러 백오프 기준)
+
+**버그 / 트러블슈팅**
+- **transfer가 21시간째 CrashLoopBackOff (재시작 133회):** Flyway `Found non-empty schema(s) "transfer" but no schema history table`. `search_path`가 `"$user", public`이라 V1이 계정 이름과 같은 `transfer` 스키마를 만든 뒤로 Flyway의 현재 스키마가 public → transfer로 바뀌어 기록 테이블(public)을 못 찾음. 첫 기동만 성공하고 재시작마다 실패. `spring.flyway.default-schema: public`으로 고정. Testcontainers 계정이 `test`라 조건이 안 생겨 못 잡았음 → 계정을 클러스터와 같은 `transfer`로 맞추고 `flyway.migrate()` 재실행으로 재현 → 수정 → 클러스터에서 파드 삭제로 재기동 확인
+- 도메인에 `require(amount > 0)`이 생기자 "같은 계좌 DB 제약" 테스트가 도메인에서 먼저 막혀 실패 → DB 제약 테스트는 SQL 직접 INSERT로
+- 가짜 core가 저장한 `Transfer` 참조가 호출 뒤 use case에 의해 COMPLETED로 바뀌어 "호출 시점 상태" 검사 실패 → 가변 엔티티는 호출 순간에 값을 기록
+- 타임아웃 테스트가 2초 걸림: 가짜 서버의 `sleep`을 `stop()`이 기다림 → 래치로 붙잡고 끝나면 풀기 (0.2초)
+- `assertFalse(e is DuplicateIdempotencyKeyException)`: 상속 관계가 없는 타입이라 항상 false인 의미 없는 단언 (컴파일러 경고로 발견)
+- 개발자 구현에서: `validate()` 조건 반대(`!=`), `IllegalArgumentException`으로 400 의도(→ 500), IDE에서 다른 테스트 클래스를 돌려 "다 통과"로 오인
+- push 거절: CI의 이미지 태그 커밋이 먼저 올라감 → `pull --rebase` 후 push
+
+**다음**
+- `docs/learning/2026-11-13.md`, `2026-11-14.md` 개발자 요약 → Claude 리뷰
+- 3-2주 남은 것: gateway(라우팅 + JWT 인증). 3주 차가 다른 주의 두 배 이상이라 일정 선택 필요: ① 3-3으로 며칠 더 ② 4주 차(Kafka) 앞에 붙이기. 8주 차가 멱등이 빠져 가벼워졌으니 전체 분량은 그대로
+
+---
+
 ## 이력서 소재 (계속 갱신)
 
 > 아직 "결과 수치"가 있는 실험은 없다. Phase 2(6~8주 차)부터 재현 → 해결 → 전후 수치가 쌓인다.
@@ -122,6 +157,12 @@
 - 잔액 변경을 도메인 메서드로 제한, 음수 금액·잔고 부족을 업무 예외로 거절하고 경계값 테스트로 고정
 - 복식부기 원장과 잔액 변경을 한 트랜잭션으로 묶고, 원장 기록 후 실패해도 함께 롤백됨을 통합 테스트로 증명
 - 멱등 키 기반 중복 거래 방지: 같은 키 동시 요청을 DB UNIQUE + 트랜잭션 밖 재시도로 처리, 경합을 결정적으로 재현하는 테스트(CountDownLatch + spy)로 검증
+- 서비스 간 송금 호출에서 DB 트랜잭션을 분리(처리중 커밋 → 트랜잭션 밖 원격 호출 → 결과 커밋)해 커넥션 점유를 없애고, 호출 중 트랜잭션 부재를 테스트로 증명
+- 원격 호출 결과를 완료·거절·결과 불명으로 분류해 "응답 없음 = 실패" 오판으로 인한 이중 송금 경로 제거 (타임아웃·5xx·멱등 충돌은 결과 불명 → 같은 송금 ID 재전송/상태 조회로 확정)
+- 고객 멱등 키를 송금 레코드에 통합해 키 저장과 송금 생성을 원자화, 처리 중·결과 불명 상태의 재요청 규칙 설계
+
+**운영 / 트러블슈팅**
+- 재시작 때만 실패하는 Flyway 장애(PostgreSQL search_path와 스키마 이름 충돌)를 운영과 같은 계정 조건의 테스트로 재현·수정
 
 **코드 품질**
 - 값 객체(Kotlin value class)로 입력 검증을 타입에 담아 검증 누락 경로를 컴파일 단계에서 제거, 400(클라이언트가 고칠 수 있음)과 500(서버 버그)을 계층별로 구분
