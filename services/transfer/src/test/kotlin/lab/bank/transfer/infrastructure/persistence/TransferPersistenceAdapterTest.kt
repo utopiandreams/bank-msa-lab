@@ -10,6 +10,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import java.time.Instant
 import java.util.UUID
@@ -20,7 +21,7 @@ import kotlin.test.assertNull
 
 // 저장 어댑터 테스트: 매퍼가 필드를 빠짐없이 옮기는지, 버전(낙관적 락)이 동작하는지, DB 제약이 걸려 있는지
 //
-// 상태를 바꾼 송금은 도메인 메서드(개발자 구현 예정) 대신 복원용 생성자로 직접 만든다 (저장 계층만 검사하려고)
+// 상태를 바꾼 송금은 도메인 메서드 대신 복원용 생성자로 직접 만든다 (전이 규칙과 무관하게 저장 계층만 검사하려고)
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(TestcontainersConfiguration::class, TransferPersistenceAdapter::class)
@@ -28,6 +29,7 @@ class TransferPersistenceAdapterTest {
 
     @Autowired lateinit var adapter: TransferPersistenceAdapter
     @Autowired lateinit var em: TestEntityManager
+    @Autowired lateinit var jdbc: JdbcTemplate
 
     private val now = Instant.parse("2026-11-13T00:00:00Z")
 
@@ -42,7 +44,7 @@ class TransferPersistenceAdapterTest {
         version: Long? = null,
     ) = Transfer(id, from, to, amount, status, failureCode, coreEntryId, now, now, version)
 
-    // 같은 송금의 "다음 상태"를 복원 생성자로 흉내 낸다 (나중엔 도메인 메서드가 할 일)
+    // 같은 송금의 "다음 상태"를 복원 생성자로 흉내 낸다 (UNKNOWN → FAILED 경합처럼 전이 순서를 자유롭게 만들려고)
     private fun Transfer.withStatus(status: TransferStatus, failureCode: String? = null, coreEntryId: UUID? = null) =
         Transfer(id, fromAccountId, toAccountId, amount, status, failureCode, coreEntryId, createdAt, now, version)
 
@@ -90,10 +92,19 @@ class TransferPersistenceAdapterTest {
         assertNull(adapter.findById(UUID.randomUUID()))
     }
 
+    // 도메인(init의 require)이 먼저 막으므로 Transfer 객체로는 DB까지 못 간다 → SQL로 직접 넣어 마지막 방어선만 검사
     @Test
     fun `같은 계좌로 보내는 송금은 DB 제약이 막는다`() {
         val accountId = UUID.randomUUID()
-        assertFailsWith<DataIntegrityViolationException> { adapter.save(transfer(from = accountId, to = accountId)) }
+        assertFailsWith<DataIntegrityViolationException> {
+            jdbc.update(
+                """
+                INSERT INTO transfer.transfer (id, from_account_id, to_account_id, amount, status, created_at, updated_at, version)
+                VALUES (?, ?, ?, 10000, 'REQUESTED', now(), now(), 0)
+                """.trimIndent(),
+                UUID.randomUUID(), accountId, accountId,
+            )
+        }
     }
 
     @Test

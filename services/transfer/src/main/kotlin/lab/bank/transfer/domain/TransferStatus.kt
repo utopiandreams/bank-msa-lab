@@ -1,6 +1,6 @@
 package lab.bank.transfer.domain
 
-// 송금 상태 머신 (ADR-0001). 전이 규칙은 Transfer의 도메인 메서드가 갖는다
+// 송금 상태 머신 (ADR-0001). 허용 전이는 canTransitTo, 전이 실행은 Transfer의 도메인 메서드
 //
 //   REQUESTED ──▶ PROCESSING ──core 성공──▶ COMPLETED
 //                           ├─core 거절──▶ FAILED
@@ -11,4 +11,22 @@ enum class TransferStatus {
     COMPLETED,    // 완료 (끝 상태)
     FAILED,       // 실패: core가 거절 (잔액 부족, 계좌 없음 등) (끝 상태)
     UNKNOWN,      // 확인필요: 타임아웃 등으로 core가 처리했는지 모름
+    ;
+
+    fun canTransitTo(to: TransferStatus): Boolean =
+        when(this) {
+            REQUESTED -> when (to) {
+                PROCESSING -> true
+                else -> false
+            }
+            PROCESSING -> when (to) {
+                COMPLETED, FAILED, UNKNOWN -> true
+                else -> false
+            }
+            UNKNOWN -> when (to) {
+                COMPLETED, FAILED -> true
+                else -> false
+            }
+            COMPLETED, FAILED -> false
+        }
 }

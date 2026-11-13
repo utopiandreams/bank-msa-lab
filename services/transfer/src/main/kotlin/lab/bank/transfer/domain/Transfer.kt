@@ -39,12 +39,40 @@ class Transfer(
     var updatedAt: Instant = updatedAt
         private set
 
-    // ───────────── TODO(개발자): 도메인 메서드 ─────────────
-    // 1. 새 송금 만들기: companion object의 팩토리 (예: request(from, to, amount)) → REQUESTED, id = UUID.randomUUID()
-    //    불변식: 금액 > 0, from != to (어디서 검사할지: init? 팩토리?)
-    // 2. 상태 전이: startProcessing(), complete(coreEntryId), fail(failureCode), markUnknown()
-    //    - 허용되지 않은 전이는 예외 (예: COMPLETED → FAILED, REQUESTED → COMPLETED)
-    //    - 끝 상태(COMPLETED, FAILED)는 바뀌지 않는다
-    //    - 전이할 때 updatedAt 갱신, complete는 coreEntryId, fail은 failureCode를 함께 채운다
-    //    - UNKNOWN → COMPLETED/FAILED는 8주 차(상태 조회로 해소)에 필요하다. 지금 열어 둘지 정하기
+    init {
+        require(fromAccountId != toAccountId) { "송금 간 계좌가 동일함" }
+        require(amount > 0) { "송금 금액은 0원 보다 커야함" }
+    }
+
+    fun startProcessing() = transitTo(TransferStatus.PROCESSING)
+    fun completeProcessing(coreEntryId: UUID) = transitTo(TransferStatus.COMPLETED, coreEntryId)
+    fun failedProcessing(failureCode: String) = transitTo(TransferStatus.FAILED, null, failureCode)
+    fun markUnknown() = transitTo(TransferStatus.UNKNOWN)
+
+    private fun transitTo(to: TransferStatus, coreEntryId: UUID? = null, failureCode: String? = null) {
+        check (status.canTransitTo(to)) { "잘못된 상태 전이 ${this.status.name} => ${to.name}" }
+        this.coreEntryId = coreEntryId
+        this.failureCode = failureCode
+        status = to
+        updatedAt = Instant.now()
+    }
+
+    companion object {
+        fun request(fromAccountId: UUID, toAccountId: UUID, amount: Long): Transfer {
+            val now = Instant.now()
+            return Transfer(
+                id = UUID.randomUUID(),
+                fromAccountId = fromAccountId,
+                toAccountId = toAccountId,
+                amount = amount,
+                status = TransferStatus.REQUESTED,
+                createdAt = now,
+                updatedAt = now,
+                failureCode = null,
+                coreEntryId = null,
+                version = null,
+            )
+        }
+
+    }
 }
