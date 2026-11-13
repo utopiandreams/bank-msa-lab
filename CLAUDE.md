@@ -118,11 +118,12 @@
     - [x] core 호출 어댑터: 응답 → 완료·거절·결과 불명 분류, 타임아웃, 어댑터 테스트 14개 (2026-11-13)
     - [x] T-1: 송금 요청 use case (트랜잭션 분리: 처리중 커밋 → 트랜잭션 밖 core 호출 → 결과 커밋), 입구 검증 400, 송금 API. 클러스터에서 transfer → core 송금·거절·400 curl 확인 (2026-11-14)
     - [ ] 오늘 배운 것 정리 (`docs/learning/2026-11-14.md`, Claude 공부 자료 작성 완료 → 개발자 요약 → Claude 리뷰)
-    - [ ] T-2: 고객 멱등 키 (`Idempotency-Key` 헤더, Flyway V2). 메커니즘은 core 재사용, 설계 초점은 **처리 중(PROCESSING) 중복 요청 응답**, **UNKNOWN 뒤 같은 키 재시도**, **키 범위(사용자별)**
+    - [x] T-2: 고객 멱등 키 (`Idempotency-Key` 헤더, Flyway V2). 메커니즘은 core 재사용, 설계 초점은 **처리 중(PROCESSING) 중복 요청 응답**, **UNKNOWN 뒤 같은 키 재시도**, **키 범위(사용자별)**
       - 2026-11-14 결정: 8주 차에서 앞당김. 멱등 메커니즘(UNIQUE + 재시도)은 core에서 이미 재현·증명해 다시 재현할 가치가 낮고, transfer에서만 새로 생기는 문제(원격 호출로 처리 중 상태가 보임)에 집중한다
       - 2026-11-14 설계: 송금 행에 고객 키 컬럼 + UNIQUE, 재요청엔 **송금의 현재 상태**를 돌려준다 (응답을 따로 저장하는 Stripe 방식 아님 → 키가 송금과 같은 INSERT라 원자성이 자연히 보장되고, 해소된 결과가 최신으로 보인다). gateway가 아니라 transfer에서 처리하는 이유도 이것 (gateway는 업무를 몰라 응답 저장 방식밖에 못 씀)
         - 같은 키: COMPLETED·FAILED·PROCESSING → 그대로 200 / UNKNOWN → 같은 송금 ID로 core 재전송 후 200 (또 모름이면 UNKNOWN 유지) / 내용 다름 → 409 / 헤더 없음 → 400 / 처음 → 201
         - 키 범위: 일단 전역 UNIQUE, gateway JWT 인증이 생기면 사용자별로
+      - 완료 (2026-11-14): 테스트 56개, 클러스터에서 V2 적용(기존 송금 3건 legacy- 키로 채움)·같은 키 201→200·잔액 한 번만·409·400 확인
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가
@@ -151,7 +152,7 @@
 - [ ] 19주: 버퍼 / 패널을 화면 공유하며 설명하는 모의 면접
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
-- [ ] **Flyway 복습 (다음 세션 첫 순서):** 번호 붙은 SQL을 순서대로 한 번씩만 실행, `flyway_schema_history` 기록 테이블, 이미 적용된 파일을 고치면 안 되는 이유(체크섬). 실습: 클러스터 DB에서 기록 테이블 조회 → V2 추가해 push → 적용 확인
+- [ ] **Flyway 복습 (다음 세션 첫 순서, 2026-11-14 실습 일부 완료: transfer V2 적용·`flyway_schema_history` 확인, search_path 장애 경험 → 개념 정리만 남음):** 번호 붙은 SQL을 순서대로 한 번씩만 실행, `flyway_schema_history` 기록 테이블, 이미 적용된 파일을 고치면 안 되는 이유(체크섬). 실습: 클러스터 DB에서 기록 테이블 조회 → V2 추가해 push → 적용 확인
 - [ ] **스토리지 복습 (PVC · PV · 마운트, CloudNativePG):** PVC(요청서) → PV(실제 디스크) → volumeMounts(컨테이너 경로) 연결, local-path가 노드에 묶이는 한계, 오퍼레이터가 대신 만들어 주는 것. 실습: DB 파드 삭제 후 데이터 유지 확인, DB가 올라간 노드 끄기. 재료: `deploy/platform/core-db/cluster.yaml`, `kubectl -n bank get pvc,pv`. 늦어도 17주 차(DB 다운 실험) 전에
 - [ ] **배포 파이프라인 복습 (Dockerfile · CI · 공통 Helm 차트):** Dockerfile 최적화(레이어 분리로 코드만 바뀌면 수십 KB만 전송, 멀티스테이지, 비root), CI 워크플로 세부(캐시, `concurrency`, amd64 지정, 태그 커밋 충돌 처리), 그리고 차트: JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
