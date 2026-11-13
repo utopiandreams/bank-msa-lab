@@ -2,6 +2,7 @@ package lab.bank.transfer.infrastructure.core
 
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -37,6 +38,7 @@ import com.sun.net.httpserver.HttpServer
 class CorePostingAdapterTest {
 
     private val transfer = Transfer.request(
+        idempotencyKey = IdempotencyKey("adapter-test"),
         fromAccountId = UUID.fromString("00000000-0000-0000-0000-00000000000a"),
         toAccountId = UUID.fromString("00000000-0000-0000-0000-00000000000b"),
         amount = Amount(10_000),

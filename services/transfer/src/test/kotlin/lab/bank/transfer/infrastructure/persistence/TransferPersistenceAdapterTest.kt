@@ -1,7 +1,9 @@
 package lab.bank.transfer.infrastructure.persistence
 
 import lab.bank.transfer.TestcontainersConfiguration
+import lab.bank.transfer.application.port.out.DuplicateIdempotencyKeyException
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.TransferStatus
 import org.junit.jupiter.api.Test
@@ -36,6 +38,7 @@ class TransferPersistenceAdapterTest {
 
     private fun transfer(
         id: UUID = UUID.randomUUID(),
+        key: String = "key-${UUID.randomUUID()}",
         from: UUID = UUID.randomUUID(),
         to: UUID = UUID.randomUUID(),
         amount: Long = 10_000,
@@ -43,11 +46,11 @@ class TransferPersistenceAdapterTest {
         failureCode: String? = null,
         coreEntryId: UUID? = null,
         version: Long? = null,
-    ) = Transfer(id, from, to, Amount(amount), status, failureCode, coreEntryId, now, now, version)
+    ) = Transfer(id, IdempotencyKey(key), from, to, Amount(amount), status, failureCode, coreEntryId, now, now, version)
 
     // 같은 송금의 "다음 상태"를 복원 생성자로 흉내 낸다 (UNKNOWN → FAILED 경합처럼 전이 순서를 자유롭게 만들려고)
     private fun Transfer.withStatus(status: TransferStatus, failureCode: String? = null, coreEntryId: UUID? = null) =
-        Transfer(id, fromAccountId, toAccountId, amount, status, failureCode, coreEntryId, createdAt, now, version)
+        Transfer(id, idempotencyKey, fromAccountId, toAccountId, amount, status, failureCode, coreEntryId, createdAt, now, version)
 
     @Test
     fun `새 송금을 저장하고 조회하면 모든 필드가 그대로다`() {
@@ -100,16 +103,45 @@ class TransferPersistenceAdapterTest {
         assertFailsWith<DataIntegrityViolationException> {
             jdbc.update(
                 """
-                INSERT INTO transfer.transfer (id, from_account_id, to_account_id, amount, status, created_at, updated_at, version)
-                VALUES (?, ?, ?, 10000, 'REQUESTED', now(), now(), 0)
+                INSERT INTO transfer.transfer (id, idempotency_key, from_account_id, to_account_id, amount, status, created_at, updated_at, version)
+                VALUES (?, ?, ?, ?, 10000, 'REQUESTED', now(), now(), 0)
                 """.trimIndent(),
-                UUID.randomUUID(), accountId, accountId,
+                UUID.randomUUID(), "key-${UUID.randomUUID()}", accountId, accountId,
             )
         }
     }
 
     @Test
     fun `완료인데 core 거래 ID가 없으면 DB 제약이 막는다`() {
+        assertFailsWith<DataIntegrityViolationException> { adapter.save(transfer(status = TransferStatus.COMPLETED)) }
+    }
+
+    // ───────────── 고객 멱등 키 (T-2) ─────────────
+
+    @Test
+    fun `멱등 키로 송금을 찾는다`() {
+        val saved = adapter.save(transfer(key = "find-me", status = TransferStatus.PROCESSING))
+        em.clear()
+
+        val found = assertNotNull(adapter.findByIdempotencyKey(IdempotencyKey("find-me")))
+        assertEquals(saved.id, found.id)
+        assertEquals(IdempotencyKey("find-me"), found.idempotencyKey)
+    }
+
+    @Test
+    fun `같은 멱등 키로 새 송금을 저장하면 - 포트 예외로 번역된다 (use case가 JPA 예외를 몰라도 되게)`() {
+        adapter.save(transfer(key = "dup-key", status = TransferStatus.PROCESSING))
+
+        val e = assertFailsWith<DuplicateIdempotencyKeyException> {
+            adapter.save(transfer(key = "dup-key", status = TransferStatus.PROCESSING))
+        }
+        assertEquals(IdempotencyKey("dup-key"), e.idempotencyKey)
+    }
+
+    @Test
+    fun `다른 제약 위반은 멱등 키 예외로 번역하지 않는다 - 우리 버그는 그대로 500`() {
+        // 완료인데 원장 ID 없음 → ck_transfer_completed_has_entry 위반. 중복 키로 오인하면 안 된다
+        // 번역됐다면 DuplicateIdempotencyKeyException(DataIntegrityViolationException 아님)이 나서 여기서 실패한다
         assertFailsWith<DataIntegrityViolationException> { adapter.save(transfer(status = TransferStatus.COMPLETED)) }
     }
 }

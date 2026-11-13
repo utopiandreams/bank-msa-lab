@@ -6,6 +6,7 @@ import lab.bank.transfer.TestcontainersConfiguration
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.TransferRepository
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.SameAccountsException
 import lab.bank.transfer.domain.TransferStatus
 import org.junit.jupiter.api.BeforeEach
@@ -42,6 +43,10 @@ class TransferUseCaseTest {
     @BeforeEach
     fun setUp() = fakeCore.reset()
 
+    // 매번 새 멱등 키 = 서로 다른 송금 의도 (멱등 동작 자체는 TransferIdempotencyTest)
+    private fun transfer(from: UUID, to: UUID, amount: Amount) =
+        transferUseCase.transfer(IdempotencyKey("key-${UUID.randomUUID()}"), from, to, amount).transfer
+
     // DB에서 다시 읽는다: use case가 돌려준 객체가 아니라 실제로 커밋된 상태를 본다
     private fun reload(id: UUID) = assertNotNull(transferRepository.findById(id))
 
@@ -52,7 +57,7 @@ class TransferUseCaseTest {
         val entryId = UUID.randomUUID()
         fakeCore.respond = { CoreTransferResult.Completed(entryId) }
 
-        val result = transferUseCase.transfer(from, to, Amount(10_000))
+        val result = transfer(from, to, Amount(10_000))
 
         val saved = reload(result.id)
         assertEquals(TransferStatus.COMPLETED, saved.status)
@@ -65,7 +70,7 @@ class TransferUseCaseTest {
     fun `core 거절 - FAILED, 실패 사유가 남는다`() {
         fakeCore.respond = { CoreTransferResult.Rejected("INSUFFICIENT_BALANCE") }
 
-        val result = transferUseCase.transfer(from, to, Amount(10_000))
+        val result = transfer(from, to, Amount(10_000))
 
         val saved = reload(result.id)
         assertEquals(TransferStatus.FAILED, saved.status)
@@ -77,7 +82,7 @@ class TransferUseCaseTest {
     fun `core 결과 불명 - UNKNOWN, FAILED로 확정하지 않는다`() {
         fakeCore.respond = { CoreTransferResult.Unknown("read timeout") }
 
-        val result = transferUseCase.transfer(from, to, Amount(10_000))
+        val result = transfer(from, to, Amount(10_000))
 
         val saved = reload(result.id)
         assertEquals(TransferStatus.UNKNOWN, saved.status)
@@ -87,7 +92,7 @@ class TransferUseCaseTest {
 
     @Test
     fun `use case가 돌려준 송금은 DB 상태와 같다 - 컨트롤러가 이걸로 응답한다`() {
-        val result = transferUseCase.transfer(from, to, Amount(10_000))
+        val result = transfer(from, to, Amount(10_000))
 
         val saved = reload(result.id)
         assertEquals(saved.status, result.status)
@@ -101,7 +106,7 @@ class TransferUseCaseTest {
         var transactionActiveDuringCall: Boolean? = null
         fakeCore.onCall = { transactionActiveDuringCall = TransactionSynchronizationManager.isActualTransactionActive() }
 
-        transferUseCase.transfer(from, to, Amount(10_000))
+        transfer(from, to, Amount(10_000))
 
         assertFalse(assertNotNull(transactionActiveDuringCall), "core 호출이 트랜잭션 안에서 일어났다")
     }
@@ -112,7 +117,7 @@ class TransferUseCaseTest {
         // 호출 순간 DB를 따로 읽는다 = 다른 트랜잭션(8주 차 해소 스케줄러)이 보는 상태
         fakeCore.onCall = { transfer -> statusSeenByOthers = transferRepository.findById(transfer.id)?.status }
 
-        transferUseCase.transfer(from, to, Amount(10_000))
+        transfer(from, to, Amount(10_000))
 
         assertEquals(TransferStatus.PROCESSING, statusSeenByOthers)
     }
@@ -123,7 +128,7 @@ class TransferUseCaseTest {
         var statusAtCall: TransferStatus? = null
         fakeCore.onCall = { statusAtCall = it.status }
 
-        val result = transferUseCase.transfer(from, to, Amount(10_000))
+        val result = transfer(from, to, Amount(10_000))
 
         assertEquals(1, fakeCore.calls.size)
         assertEquals(result.id, fakeCore.calls.single().id)
@@ -134,7 +139,7 @@ class TransferUseCaseTest {
 
     @Test
     fun `같은 계좌로 송금 - 업무 예외, core를 부르지 않는다`() {
-        assertFailsWith<SameAccountsException> { transferUseCase.transfer(from, from, Amount(10_000)) }
+        assertFailsWith<SameAccountsException> { transfer(from, from, Amount(10_000)) }
 
         assertTrue(fakeCore.calls.isEmpty())
     }

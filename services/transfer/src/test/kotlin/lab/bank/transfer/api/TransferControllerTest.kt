@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.util.UUID
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 // HTTP 계층 테스트: 상태 코드·헤더·예외 매핑 (상태 전이·트랜잭션은 TransferUseCaseTest가 검사)
@@ -35,14 +36,18 @@ class TransferControllerTest {
     @BeforeEach
     fun setUp() = fakeCore.reset()
 
-    private fun postTransfer(body: String): ResultActionsDsl =
+    private fun newKey() = "key-${UUID.randomUUID()}"
+
+    // key = null이면 헤더를 아예 안 보낸다
+    private fun postTransfer(body: String, key: String? = newKey()): ResultActionsDsl =
         mockMvc.post("/transfers") {
+            key?.let { header("Idempotency-Key", it) }
             contentType = MediaType.APPLICATION_JSON
             content = body
         }
 
-    private fun postTransfer(from: UUID, to: UUID, amount: Long) =
-        postTransfer("""{"fromAccountId":"$from","toAccountId":"$to","amount":$amount}""")
+    private fun postTransfer(from: UUID, to: UUID, amount: Long, key: String? = newKey()) =
+        postTransfer("""{"fromAccountId":"$from","toAccountId":"$to","amount":$amount}""", key)
 
     // ───────────── 정상 ─────────────
 
@@ -126,5 +131,49 @@ class TransferControllerTest {
     @Test
     fun `깨진 JSON - 400`() {
         postTransfer("""{"fromAccountId":""").andExpect { status { isBadRequest() } }
+    }
+
+    // ───────────── 고객 멱등 키 (T-2) ─────────────
+
+    @Test
+    fun `멱등 키 헤더 없음 - 400 INVALID_IDEMPOTENCY_KEY, core를 부르지 않는다`() {
+        postTransfer(from, to, 10_000, key = null).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("INVALID_IDEMPOTENCY_KEY") }
+        }
+        assertTrue(fakeCore.calls.isEmpty())
+    }
+
+    @Test
+    fun `멱등 키 65자 - 400 (DB 컬럼 64자를 넘으면 INSERT에서 터지기 전에 막는다)`() {
+        postTransfer(from, to, 10_000, key = "k".repeat(65)).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("INVALID_IDEMPOTENCY_KEY") }
+        }
+    }
+
+    @Test
+    fun `같은 키 재요청 - 200, 같은 송금 ID`() {
+        val key = newKey()
+        val first = postTransfer(from, to, 10_000, key).andExpect { status { isCreated() } }.andReturn().response
+        val firstId = JsonPath.read<String>(first.contentAsString, "$.transferId")
+
+        postTransfer(from, to, 10_000, key).andExpect {
+            status { isOk() }
+            jsonPath("$.transferId") { value(firstId) }
+            jsonPath("$.status") { value("COMPLETED") }
+        }
+        assertEquals(1, fakeCore.calls.size)
+    }
+
+    @Test
+    fun `같은 키에 다른 금액 - 409 IDEMPOTENCY_CONFLICT`() {
+        val key = newKey()
+        postTransfer(from, to, 10_000, key).andExpect { status { isCreated() } }
+
+        postTransfer(from, to, 20_000, key).andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("IDEMPOTENCY_CONFLICT") }
+        }
     }
 }

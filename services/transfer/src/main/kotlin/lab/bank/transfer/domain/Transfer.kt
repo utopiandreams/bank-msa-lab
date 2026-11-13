@@ -13,6 +13,7 @@ import java.util.UUID
  */
 class Transfer(
     val id: UUID,
+    val idempotencyKey: IdempotencyKey,   // 고객이 보낸 멱등 키 (송금 ID와 다름, IdempotencyKey 주석)
     val fromAccountId: UUID,
     val toAccountId: UUID,
     val amount: Amount,               // 원 단위, 0보다 큼 (타입이 보장)
@@ -44,6 +45,13 @@ class Transfer(
         // 금액 > 0은 Amount 타입이 보장한다
     }
 
+    // 같은 멱등 키로 온 요청이 이 송금과 같은 내용인가. 키는 이미 키로 찾았으니 비교하지 않는다
+    // 세 필드 전부 비교: 금액만 보면 "받는 계좌만 바꾼 재요청"을 놓친다
+    fun isSameRequestAs(fromAccountId: UUID, toAccountId: UUID, amount: Amount): Boolean =
+        this.fromAccountId == fromAccountId &&
+            this.toAccountId == toAccountId &&
+            this.amount == amount
+
     fun startProcessing() = transitTo(TransferStatus.PROCESSING)
     fun completeProcessing(coreEntryId: UUID) = transitTo(TransferStatus.COMPLETED, coreEntryId)
     fun failedProcessing(failureCode: String) = transitTo(TransferStatus.FAILED, null, failureCode)
@@ -58,10 +66,11 @@ class Transfer(
     }
 
     companion object {
-        fun request(fromAccountId: UUID, toAccountId: UUID, amount: Amount): Transfer {
+        fun request(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): Transfer {
             val now = Instant.now()
             return Transfer(
                 id = UUID.randomUUID(),
+                idempotencyKey = idempotencyKey,
                 fromAccountId = fromAccountId,
                 toAccountId = toAccountId,
                 amount = amount,

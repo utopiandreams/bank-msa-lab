@@ -4,7 +4,8 @@ package lab.bank.transfer.domain
 //
 //   REQUESTED ──▶ PROCESSING ──core 성공──▶ COMPLETED
 //                           ├─core 거절──▶ FAILED
-//                           └─결과 모름──▶ UNKNOWN ──(8주 차: 상태 조회로)──▶ COMPLETED / FAILED
+//                           └─결과 모름──▶ UNKNOWN ──재전송(고객 재요청) / 상태 조회(8주 차)──▶ COMPLETED / FAILED
+//                                            ↺ 재전송이 또 모름 (UNKNOWN → UNKNOWN: updatedAt = 마지막 시도 시각)
 enum class TransferStatus {
     REQUESTED,    // 요청됨: 송금 기록 생성, 송금 ID 발급
     PROCESSING,   // 처리중: core 호출 직전에 커밋. core 호출 후 결과 반영 전에 죽으면 여기 남는다
@@ -24,7 +25,7 @@ enum class TransferStatus {
                 else -> false
             }
             UNKNOWN -> when (to) {
-                COMPLETED, FAILED -> true
+                COMPLETED, FAILED, UNKNOWN -> true
                 else -> false
             }
             COMPLETED, FAILED -> false

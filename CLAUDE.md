@@ -15,9 +15,9 @@
 
 | 서비스 | 역할 |
 | --- | --- |
-| `gateway` | Spring Cloud Gateway (WebFlux, 논블로킹). 라우팅, JWT 인증, Idempotency-Key 검사 |
+| `gateway` | Spring Cloud Gateway (WebFlux, 논블로킹). 라우팅, JWT 인증 |
 | `core` | 계정계 코어. 모듈형 모놀리스(DB 하나): `account` 모듈(계좌·잔액) + `ledger` 모듈(복식부기 원장, 대사의 기준). 송금 ID 기준 멱등 처리, 상태 조회 API |
-| `transfer` | 송금 요청 기록과 상태 머신, 상태 조회로 결과 불명 해소, 타행 이체 사가 지휘 |
+| `transfer` | 송금 요청 기록과 상태 머신, 고객 멱등 키(Idempotency-Key), 상태 조회로 결과 불명 해소, 타행 이체 사가 지휘 |
 | `notification` | 송금 결과 알림. Kafka 이벤트 구독 |
 | `bank-mock` | 외부 은행 Mock. 지연·실패·타임아웃을 설정으로 주입할 수 있어야 함 |
 | `chaos-control` | 컨트롤 패널의 백엔드. k6-operator로 부하 실행, Chaos Mesh로 파드 종료·네트워크 지연, 각 서비스의 실험 스위치 변경, 진행 상황을 SSE로 전달 |
@@ -120,6 +120,9 @@
     - [ ] 오늘 배운 것 정리 (`docs/learning/2026-11-14.md`, Claude 공부 자료 작성 완료 → 개발자 요약 → Claude 리뷰)
     - [ ] T-2: 고객 멱등 키 (`Idempotency-Key` 헤더, Flyway V2). 메커니즘은 core 재사용, 설계 초점은 **처리 중(PROCESSING) 중복 요청 응답**, **UNKNOWN 뒤 같은 키 재시도**, **키 범위(사용자별)**
       - 2026-11-14 결정: 8주 차에서 앞당김. 멱등 메커니즘(UNIQUE + 재시도)은 core에서 이미 재현·증명해 다시 재현할 가치가 낮고, transfer에서만 새로 생기는 문제(원격 호출로 처리 중 상태가 보임)에 집중한다
+      - 2026-11-14 설계: 송금 행에 고객 키 컬럼 + UNIQUE, 재요청엔 **송금의 현재 상태**를 돌려준다 (응답을 따로 저장하는 Stripe 방식 아님 → 키가 송금과 같은 INSERT라 원자성이 자연히 보장되고, 해소된 결과가 최신으로 보인다). gateway가 아니라 transfer에서 처리하는 이유도 이것 (gateway는 업무를 몰라 응답 저장 방식밖에 못 씀)
+        - 같은 키: COMPLETED·FAILED·PROCESSING → 그대로 200 / UNKNOWN → 같은 송금 ID로 core 재전송 후 200 (또 모름이면 UNKNOWN 유지) / 내용 다름 → 409 / 헤더 없음 → 400 / 처음 → 201
+        - 키 범위: 일단 전역 UNIQUE, gateway JWT 인증이 생기면 사용자별로
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가

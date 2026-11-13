@@ -19,3 +19,10 @@ class InvalidAmountException(amount: Long) :
 
 class SameAccountsException(fromAccountId: UUID, toAccountId: UUID) :
         TransferException("SAME_ACCOUNT_TRANSFER", "입금 계좌 번호와 출금 계좌번호가 같을 수 없습니다: $fromAccountId")
+
+class InvalidIdempotencyKeyException(reason: String) :
+    TransferException("INVALID_IDEMPOTENCY_KEY", "멱등 키가 올바르지 않습니다: $reason")
+
+// 같은 키로 다른 내용(계좌·금액)이 왔다: 키를 재사용한 클라이언트 버그. 먼저 처리된 송금과 충돌 → 409
+class IdempotencyConflictException(idempotencyKey: IdempotencyKey) :
+    TransferException("IDEMPOTENCY_CONFLICT", "같은 멱등 키로 다른 내용의 송금이 이미 있습니다: ${idempotencyKey.value}")

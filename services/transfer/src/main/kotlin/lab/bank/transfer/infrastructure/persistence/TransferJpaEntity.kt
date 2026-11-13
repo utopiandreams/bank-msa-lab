@@ -24,6 +24,10 @@ class TransferJpaEntity(
     @Id
     var id: UUID,
 
+    // UNIQUE (uq_transfer_idempotency_key, Flyway V2)
+    @Column(nullable = false, updatable = false, length = 64)
+    var idempotencyKey: String,
+
     @Column(nullable = false, updatable = false)
     var fromAccountId: UUID,
 

@@ -1,6 +1,8 @@
 package lab.bank.transfer.api
 
+import lab.bank.transfer.domain.IdempotencyConflictException
 import lab.bank.transfer.domain.InvalidAmountException
+import lab.bank.transfer.domain.InvalidIdempotencyKeyException
 import lab.bank.transfer.domain.SameAccountsException
 import lab.bank.transfer.domain.TransferException
 import org.springframework.http.HttpStatus
@@ -22,6 +24,9 @@ class TransferExceptionHandler {
         when (e) {   // sealed: 예외를 추가하고 매핑을 빠뜨리면 컴파일 에러
             is InvalidAmountException -> HttpStatus.BAD_REQUEST
             is SameAccountsException -> HttpStatus.BAD_REQUEST
+            is InvalidIdempotencyKeyException -> HttpStatus.BAD_REQUEST
+            // 요청 형식은 맞지만 먼저 처리된 송금과 충돌 (core의 멱등 충돌과 같은 409)
+            is IdempotencyConflictException -> HttpStatus.CONFLICT
         },
         e.message, e.code,
     )
