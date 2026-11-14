@@ -174,6 +174,15 @@ services/ 등 push → 테스트 → amd64 이미지 → ghcr.io/utopiandreams/<
 
 새 서비스 추가: ① 워크플로 `matrix.service`에 이름 추가 ② `deploy/apps/<서비스>/values.yaml` ③ `deploy/argocd/apps/<서비스>.yaml` (core.yaml 복사). GHCR 패키지는 손댈 필요 없다: public 레포에서 Actions가 올린 패키지는 레포에 연결되어 public으로 생긴다 (2026-11-14 gateway 추가 때 익명 pull 200으로 확인).
 
+### gateway JWT 비밀키 (2026-11-14)
+
+- 서명 비밀키는 Git에 두지 않는다. 클러스터에서 **한 번** 만들고, 차트의 `secretEnv`로 `GATEWAY_JWT_SECRET`에 주입한다 (ADR-0002).
+  ```bash
+  kubectl -n bank create secret generic gateway-jwt --from-literal=secret="$(openssl rand -base64 48)"
+  ```
+- 64바이트 랜덤 (HS256은 32바이트 이상 필요, 짧으면 gateway가 기동을 거부한다).
+- **한계:** GitOps 밖에 있는 유일한 리소스라, 클러스터를 새로 만들면 이 명령을 다시 쳐야 한다. 키를 바꾸면 이미 발급된 토큰이 전부 무효가 된다 (15분이면 자연히 만료되니 학습용으로는 감수). 실무 대안: Sealed Secrets(암호화해서 Git에 커밋), External Secrets Operator(Vault·클라우드 비밀 저장소에서 동기화).
+
 공통 차트의 실무 포인트:
 - **CPU limit 없음, 메모리 limit만.** JVM 기동 때 CPU 스로틀링 → startupProbe 실패 → 재시작 루프를 피한다. 힙은 메모리 limit의 75%.
 - **프로브 3종.** startup(기동 끝날 때까지 나머지 보류) / liveness(실패 시 재시작 → 재시작으로 낫는 것만) / readiness(실패 시 Service에서 제외).

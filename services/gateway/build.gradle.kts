@@ -19,6 +19,9 @@ dependencyManagement {
 dependencies {
 	// WebFlux(Netty) 기반 gateway. 2025.0부터 이름이 바뀌었다 (구 spring-cloud-starter-gateway → -server-webflux)
 	implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webflux")
+	// JWT 검증(Bearer 추출·서명·만료·401)을 Spring Security가 처리. Boot 4에서 이름이 바뀜 (구 spring-boot-starter-oauth2-resource-server)
+	// 발급용 NimbusJwtEncoder도 이 안의 nimbus-jose-jwt를 쓴다 (ADR-0002)
+	implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("tools.jackson.module:jackson-module-kotlin")

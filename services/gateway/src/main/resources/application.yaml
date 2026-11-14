@@ -21,6 +21,13 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s   # preStop 5초 + 30초 < terminationGracePeriodSeconds 45초 (deploy/helm/spring-service)
 
+# 토큰 (ADR-0002, security/JwtProperties)
+gateway:
+  jwt:
+    secret: ${GATEWAY_JWT_SECRET}   # 기본값 없음: 비밀키가 없으면 기동 실패 (k8s Secret gateway-jwt → 환경변수)
+    issuer: bank-gateway            # 발급할 때 iss에 넣고, 검증할 때 iss가 이 값인지 확인
+    ttl: 15m                        # 액세스 토큰 수명. 리프레시가 없으니 만료되면 /auth/token을 다시 부른다
+
 # 쿠버네티스가 기대는 설정. 기본값과 같지만 버전업으로 바뀌지 않게 명시한다
 management:
   endpoints:
