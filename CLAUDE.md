@@ -94,7 +94,7 @@
 
 ## 5. 로드맵과 현재 진행 상황
 
-**현재: Phase 1 / 3주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
+**현재: Phase 1 / 4주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
 > 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주 → 2026-11-12 3주 차를 2주로 늘려 총 20주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
@@ -105,7 +105,7 @@
   - 복습 완료 (2026-11-11): MetalLB / kube-proxy / flannel / Traefik 역할 분담. X-Forwarded-For 부분은 보류 (아래 백로그)
   - [x] 배포 파이프라인 완료 (2026-11-12): push → CI(테스트·amd64 이미지·GHCR·태그 커밋) → Argo CD → `http://core.172.30.1.240.nip.io/actuator/health` UP
   - [ ] 개발자 티켓 남음: core `application.yaml`에 프로브·actuator 노출·graceful shutdown을 명시 (Boot 4 기본값 확인 후 명시) → 3주 차 시작 전에
-- [ ] 3주 (**2주로 늘림**, 2026-11-12): 아래 3-1, 3-2
+- [x] 3주 (**2주로 늘림**, 2026-11-12, 완료 2026-11-14): 아래 3-1, 3-2
   - 이유: 2주 차는 배포 파이프라인까지만 해서 core에 도메인·DB가 없었다. "돈이 움직이는 트랜잭션"은 이 프로젝트의 심장이라 서두르지 않는다. 이후 주차 번호는 문서 곳곳에서 참조하므로 **바꾸지 않고**, 3주 차만 2주로 쓴다 (총 20주)
   - [x] 3-1주: PostgreSQL(CloudNativePG), `core` account 모듈, `ledger` 모듈 + 송금 처리 API(로컬 트랜잭션, 송금 ID 멱등, 상태 조회), 입출금 API
     - [x] CloudNativePG 오퍼레이터 + `core-db` (PostgreSQL 18.6) (2026-11-12)
@@ -113,7 +113,7 @@
     - [x] 티켓 B: ledger 모듈 + 거래 처리(입금·출금·당행 송금). posting 모듈이 account·ledger를 한 트랜잭션으로 지휘, 멱등·동시 중복 요청·롤백 통합 테스트, 값 객체(`shared`) (2026-11-13)
     - [x] 티켓 C: 거래 HTTP API `/postings` (Idempotency-Key 헤더, 201/200, 상태 조회는 200 + `COMPLETED`/`NOT_PROCESSED`) + 예외 매핑. 클러스터에서 송금·재요청·조회·400/409/422 curl 확인 (2026-11-13)
     - [ ] 오늘 배운 것 정리 (`docs/learning/2026-11-13.md`, 개발자 작성 → Claude 리뷰) → 다음 세션 첫 순서
-  - [ ] 3-2주: `transfer` 추가(헥사고날, `transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터(인증은 gateway, 인가는 서비스)
+  - [x] 3-2주: `transfer` 추가(헥사고날, `transfer → core` 동기 REST, 상태 머신), `gateway` 라우팅 + JWT 인증 필터(인증은 gateway, 인가는 서비스)
     - [x] 송금 도메인: 생성 팩토리, 상태 전이 규칙 (2026-11-13)
     - [x] core 호출 어댑터: 응답 → 완료·거절·결과 불명 분류, 타임아웃, 어댑터 테스트 14개 (2026-11-13)
     - [x] T-1: 송금 요청 use case (트랜잭션 분리: 처리중 커밋 → 트랜잭션 밖 core 호출 → 결과 커밋), 입구 검증 400, 송금 API. 클러스터에서 transfer → core 송금·거절·400 curl 확인 (2026-11-14)
@@ -124,6 +124,12 @@
         - 같은 키: COMPLETED·FAILED·PROCESSING → 그대로 200 / UNKNOWN → 같은 송금 ID로 core 재전송 후 200 (또 모름이면 UNKNOWN 유지) / 내용 다름 → 409 / 헤더 없음 → 400 / 처음 → 201
         - 키 범위: 일단 전역 UNIQUE, gateway JWT 인증이 생기면 사용자별로
       - 완료 (2026-11-14): 테스트 56개, 클러스터에서 V2 적용(기존 송금 3건 legacy- 키로 채움)·같은 키 201→200·잔액 한 번만·409·400 확인
+    - [x] gateway (ADR-0002, 2026-11-14): 3주 차 안에서 끝내기로 결정 (4주 차로 미루지 않음)
+      - [x] G-1: 모듈 + `/transfers/**` 라우팅 (Spring Cloud 2025.1.4), core `/postings`는 열지 않음, 다운스트림 타임아웃 5s
+      - [x] G-2: JWT 인증 — Security Resource Server로 검증(HS256 고정, iss·exp), 학습용 `POST /auth/token`(15분), `X-User-Id` 덮어쓰기 필터. 위조 헤더를 먼저 재현. 비밀키는 k8s Secret
+      - [x] G-3: core·transfer Ingress 닫기 (외부 진입점은 gateway 하나)
+      - [x] 멱등 키 사용자별 (transfer Flyway V3, `(requester_id, idempotency_key)` UNIQUE, 기존 행 `legacy`). 전역 키의 정보 누출을 클러스터에서 먼저 재현
+      - [x] G-4: 계좌 소유자 인가 (BOLA) — core가 출금 트랜잭션 안에서 검사(멱등 판정 뒤), 남의 계좌는 없는 계좌와 같은 404, 계좌 개설·조회를 gateway 뒤로(`/accounts/**`, `X-User-Id`), transfer → core 요청자 전파. BOLA를 먼저 재현
 - [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가
