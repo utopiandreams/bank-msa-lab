@@ -1,5 +1,6 @@
 package lab.bank.core.posting.api
 
+import lab.bank.core.account.application.UserId
 import lab.bank.core.posting.application.PostingResult
 import lab.bank.core.posting.application.PostingUseCase
 import lab.bank.core.shared.Amount
@@ -41,14 +42,19 @@ class PostingController(
     ): ResponseEntity<PostingResponse> =
         respond(idempotencyKey, postingUseCase.withdraw(IdempotencyKey(idempotencyKey), request.accountId, Amount(request.amount)))
 
+    // X-User-Id: transfer가 고객 요청에서 받은 값을 그대로 전파한다 (사용자 컨텍스트 전파). 없으면 401
     @PostMapping("/transfers")
     fun transfer(
+        @RequestHeader(UserId.HEADER, required = false) userId: String?,
         @RequestHeader(IDEMPOTENCY_KEY_HEADER) idempotencyKey: String,
         @RequestBody request: TransferRequest,
     ): ResponseEntity<PostingResponse> =
         respond(
             idempotencyKey,
-            postingUseCase.transfer(IdempotencyKey(idempotencyKey), request.fromAccountId, request.toAccountId, Amount(request.amount)),
+            postingUseCase.transfer(
+                UserId.fromHeader(userId),
+                IdempotencyKey(idempotencyKey), request.fromAccountId, request.toAccountId, Amount(request.amount),
+            ),
         )
 
     @GetMapping("/{idempotencyKey}")

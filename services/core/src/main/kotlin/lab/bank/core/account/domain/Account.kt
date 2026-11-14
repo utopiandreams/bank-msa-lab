@@ -15,7 +15,7 @@ class Account(
     @Id
     val id: UUID = UUID.randomUUID()
 
-    // 예금주 ID (gateway가 생기면 X-User-Id 헤더의 값)
+    // 예금주 ID (X-User-Id = gateway가 검증한 토큰의 sub). 바뀌지 않는다 → 소유자 검사에 경합이 없다
     @Column(nullable = false, updatable = false)
     val ownerId: String = ownerId
 

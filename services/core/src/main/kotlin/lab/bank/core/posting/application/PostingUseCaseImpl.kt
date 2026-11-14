@@ -1,6 +1,7 @@
 package lab.bank.core.posting.application
 
 import lab.bank.core.account.application.AccountUseCase
+import lab.bank.core.account.application.UserId
 import lab.bank.core.ledger.application.LedgerUseCase
 import lab.bank.core.posting.application.exception.SameAccountTransferException
 import lab.bank.core.shared.Amount
@@ -29,11 +30,11 @@ class PostingUseCaseImpl(
     override fun withdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
         retryOnceOnDuplicateKey { withdrawInTransaction(idempotencyKey, accountId, amount) }
 
-    override fun transfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult {
+    override fun transfer(requester: UserId, idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult {
         // 값 하나로는 알 수 없고 필드 두 개를 함께 봐야 하는 규칙이라 값 객체가 아니라 여기서 검사한다.
         // 트랜잭션·재시도보다 먼저: 잘못된 요청은 DB 커넥션을 잡기 전에 돌려보낸다
         if (fromAccountId == toAccountId) throw SameAccountTransferException(fromAccountId)
-        return retryOnceOnDuplicateKey { transferInTransaction(idempotencyKey, fromAccountId, toAccountId, amount) }
+        return retryOnceOnDuplicateKey { transferInTransaction(requester, idempotencyKey, fromAccountId, toAccountId, amount) }
     }
 
     // 원장 기록과 잔액 변경이 한 트랜잭션: 둘 다 되거나 둘 다 안 된다
@@ -56,11 +57,18 @@ class PostingUseCaseImpl(
             PostingResult(recordResult.entryId, recordResult.replayed)
         }
 
-    private fun transferInTransaction(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult =
+    /**
+     * 소유자 검사는 원장 기록(멱등 판정) **뒤**, 새로 처리할 때만 한다 (accountUseCase.transfer 안).
+     * 재요청(replayed)은 처음 처리할 때 이미 허가된 거래라 다시 판정하지 않고 원래 결과를 돌려준다.
+     * 검사를 앞에 두면: 이미 처리된 거래의 재전송(transfer의 UNKNOWN 해소)이 거절되고 → transfer는 FAILED로 확정
+     * → 돈은 빠졌는데 고객에겐 실패로 보인다 (docs/learning/pitfalls.md 17).
+     * 소유자가 아니면 예외 → 원장 기록도 함께 롤백된다 (한 트랜잭션).
+     */
+    private fun transferInTransaction(requester: UserId, idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult =
         transactionTemplate.execute {
             val recordResult = ledgerUseCase.recordTransfer(idempotencyKey, fromAccountId, toAccountId, amount)
             if (!recordResult.replayed) {
-                accountUseCase.transfer(fromAccountId, toAccountId, amount, recordResult.entryId)
+                accountUseCase.transfer(requester, fromAccountId, toAccountId, amount, recordResult.entryId)
             }
             PostingResult(recordResult.entryId, recordResult.replayed)
         }

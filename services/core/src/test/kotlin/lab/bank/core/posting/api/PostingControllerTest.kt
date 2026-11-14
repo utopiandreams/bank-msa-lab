@@ -49,9 +49,11 @@ class PostingControllerTest {
             content = """{"accountId":"$accountId","amount":$amount}"""
         }
 
-    private fun transfer(key: String, from: UUID, to: UUID, amount: Long): ResultActionsDsl =
+    // user: transfer가 전파하는 X-User-Id. null이면 헤더를 안 보낸다
+    private fun transfer(key: String, from: UUID, to: UUID, amount: Long, user: String? = "u-1"): ResultActionsDsl =
         mockMvc.post("/postings/transfers") {
             header("Idempotency-Key", key)
+            user?.let { header("X-User-Id", it) }
             contentType = MediaType.APPLICATION_JSON
             content = """{"fromAccountId":"$from","toAccountId":"$to","amount":$amount}"""
         }
@@ -138,6 +140,22 @@ class PostingControllerTest {
         transfer(newKey(), accountId, accountId, 3_000).andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("SAME_ACCOUNT_TRANSFER") }
+        }
+    }
+
+    @Test
+    fun `송금에 X-User-Id가 없으면 401 MISSING_USER`() {
+        transfer(newKey(), fundedAccount(10_000), newAccount(), 3_000, user = null).andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.code") { value("MISSING_USER") }
+        }
+    }
+
+    @Test
+    fun `남의 계좌에서 송금하면 404 ACCOUNT_NOT_FOUND - 없는 계좌와 같은 응답`() {
+        transfer(newKey(), fundedAccount(10_000), newAccount(), 3_000, user = "younghee").andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("ACCOUNT_NOT_FOUND") }
         }
     }
 

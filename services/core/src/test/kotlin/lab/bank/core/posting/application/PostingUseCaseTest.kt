@@ -49,9 +49,11 @@ class PostingUseCaseTest {
     @MockitoSpyBean lateinit var journalEntryRepository: JournalEntryRepository
     @Autowired lateinit var transactionTemplate: TransactionTemplate
 
-    private fun newAccount(): UUID = accountUseCase.create(UserId("u-1")).id
+    private val owner = UserId("u-1")
+    private fun newAccount(owner: UserId = this.owner): UUID = accountUseCase.create(owner).id
     private fun newKey() = IdempotencyKey("key-${UUID.randomUUID()}")
-    private fun balanceOf(accountId: UUID): Long = accountUseCase.get(accountId).balance
+    // 테스트는 내부 조회가 필요해서 리포지토리 대신 주인으로 조회한다 (계좌는 전부 owner 것, 영희 계좌만 따로)
+    private fun balanceOf(accountId: UUID, owner: UserId = this.owner): Long = accountUseCase.getOwned(accountId, owner).balance
 
     // 잔액이 있는 계좌 (출금·송금 테스트의 준비물)
     private fun fundedAccount(amount: Long): UUID =
@@ -198,7 +200,7 @@ class PostingUseCaseTest {
         val to = fundedAccount(5_000)
         val key = newKey()
 
-        val result = postingUseCase.transfer(key, from, to, Amount(3_000))
+        val result = postingUseCase.transfer(owner, key, from, to, Amount(3_000))
 
         assertEquals(7_000, balanceOf(from))
         assertEquals(8_000, balanceOf(to))
@@ -215,7 +217,7 @@ class PostingUseCaseTest {
         val key = newKey()
 
         // 순서: 원장 기록 → 보낸 쪽 출금(성공) → 받는 쪽 조회(실패)
-        assertFailsWith<AccountNotFoundException> { postingUseCase.transfer(key, from, UUID.randomUUID(), Amount(3_000)) }
+        assertFailsWith<AccountNotFoundException> { postingUseCase.transfer(owner, key, from, UUID.randomUUID(), Amount(3_000)) }
 
         // 이미 성공했던 출금까지 되돌아가야 한다. 7_000이면 "돈이 사라진" 사고
         assertEquals(10_000, balanceOf(from))
@@ -228,7 +230,7 @@ class PostingUseCaseTest {
         val to = fundedAccount(5_000)
         val key = newKey()
 
-        assertFailsWith<InsufficientBalanceException> { postingUseCase.transfer(key, from, to, Amount(3_000)) }
+        assertFailsWith<InsufficientBalanceException> { postingUseCase.transfer(owner, key, from, to, Amount(3_000)) }
 
         assertEquals(1_000, balanceOf(from))
         assertEquals(5_000, balanceOf(to))
@@ -241,8 +243,8 @@ class PostingUseCaseTest {
         val to = newAccount()
         val key = newKey()
 
-        val first = postingUseCase.transfer(key, from, to, Amount(3_000))
-        val second = postingUseCase.transfer(key, from, to, Amount(3_000))
+        val first = postingUseCase.transfer(owner, key, from, to, Amount(3_000))
+        val second = postingUseCase.transfer(owner, key, from, to, Amount(3_000))
 
         assertEquals(7_000, balanceOf(from))
         assertEquals(3_000, balanceOf(to))
@@ -256,14 +258,60 @@ class PostingUseCaseTest {
         val to = newAccount()
         val other = newAccount()
         val key = newKey()
-        postingUseCase.transfer(key, from, to, Amount(3_000))
+        postingUseCase.transfer(owner, key, from, to, Amount(3_000))
 
         // 금액이 같아도 받는 사람이 다르면 다른 요청이다 (분개 줄의 계좌 ID까지 비교하는 isSameRequestAs가 잡는다)
-        assertFailsWith<IdempotencyConflictException> { postingUseCase.transfer(key, from, other, Amount(3_000)) }
+        assertFailsWith<IdempotencyConflictException> { postingUseCase.transfer(owner, key, from, other, Amount(3_000)) }
 
         assertEquals(7_000, balanceOf(from))
         assertEquals(3_000, balanceOf(to))
         assertEquals(0, balanceOf(other))
+    }
+
+    // ───────────── 소유자 검사 (G-4, BOLA) ─────────────
+
+    // 재현 (2026-11-14 클러스터): 영희 토큰으로 철수 계좌에서 3만 원이 빠져나갔다
+    @Test
+    fun `남의 계좌에서 송금하면 없는 계좌와 같은 예외가 나고 잔액·원장 모두 그대로다`() {
+        val chulsoos = fundedAccount(10_000)
+        val younghee = UserId("younghee")
+        val youngheesAccount = newAccount(younghee)
+        val key = newKey()
+
+        assertFailsWith<AccountNotFoundException> {
+            postingUseCase.transfer(younghee, key, chulsoos, youngheesAccount, Amount(3_000))
+        }
+
+        assertEquals(10_000, balanceOf(chulsoos))
+        assertEquals(0, balanceOf(youngheesAccount, younghee))
+        assertNull(ledgerLineCount(key))   // 원장 기록도 함께 롤백
+    }
+
+    @Test
+    fun `받는 계좌는 남의 것이어도 된다 (송금은 원래 남에게 보내는 것)`() {
+        val from = fundedAccount(10_000)
+        val youngheesAccount = newAccount(UserId("younghee"))
+
+        postingUseCase.transfer(owner, newKey(), from, youngheesAccount, Amount(3_000))
+
+        assertEquals(7_000, balanceOf(from))
+    }
+
+    // 소유자 검사를 원장 기록(멱등 판정) 앞에 두면 이 테스트가 깨진다:
+    // 이미 처리된 거래의 재전송이 거절되면 transfer는 FAILED로 확정 → 돈은 빠졌는데 고객에겐 실패 (pitfalls 17)
+    @Test
+    fun `이미 처리된 거래의 재요청은 소유자를 다시 판정하지 않고 원래 결과를 돌려준다`() {
+        val from = fundedAccount(10_000)
+        val to = newAccount()
+        val key = newKey()
+        val first = postingUseCase.transfer(owner, key, from, to, Amount(3_000))
+
+        // 예: V3 이전 송금의 UNKNOWN 해소. transfer가 요청자를 'legacy'로 실어 재전송한다
+        val retried = postingUseCase.transfer(UserId("legacy"), key, from, to, Amount(3_000))
+
+        assertTrue(retried.replayed)
+        assertEquals(first.entryId, retried.entryId)
+        assertEquals(7_000, balanceOf(from))
     }
 
     @Test
@@ -271,7 +319,7 @@ class PostingUseCaseTest {
         val accountId = fundedAccount(10_000)
         val key = newKey()
 
-        assertFailsWith<SameAccountTransferException> { postingUseCase.transfer(key, accountId, accountId, Amount(3_000)) }
+        assertFailsWith<SameAccountTransferException> { postingUseCase.transfer(owner, key, accountId, accountId, Amount(3_000)) }
 
         assertEquals(10_000, balanceOf(accountId))
         assertNull(ledgerLineCount(key))

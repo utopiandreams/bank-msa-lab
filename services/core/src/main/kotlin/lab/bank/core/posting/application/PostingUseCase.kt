@@ -1,5 +1,6 @@
 package lab.bank.core.posting.application
 
+import lab.bank.core.account.application.UserId
 import lab.bank.core.shared.Amount
 import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
@@ -9,7 +10,8 @@ import java.util.UUID
 interface PostingUseCase {
     fun deposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult
     fun withdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult
-    fun transfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult
+    // requester: 보내는 계좌의 주인이어야 한다 (G-4). 입금·출금은 내부 업무(창구·ATM 흉내)라 소유자 검사가 없다
+    fun transfer(requester: UserId, idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult
 
     /**
      * 상태 조회: 이 키로 처리(커밋)된 거래가 있나. 없으면 null.

@@ -3,6 +3,7 @@ package lab.bank.core.account.api
 import lab.bank.core.account.domain.exception.AccountException
 import lab.bank.core.account.domain.exception.AccountNotFoundException
 import lab.bank.core.account.domain.exception.InsufficientBalanceException
+import lab.bank.core.account.domain.exception.MissingUserException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -19,6 +20,7 @@ class AccountExceptionHandler {
         val status = when (e) {   // sealed라서 else가 필요 없다. 예외를 추가하면 여기서 컴파일 에러
             is AccountNotFoundException -> HttpStatus.NOT_FOUND
             is InsufficientBalanceException -> HttpStatus.UNPROCESSABLE_CONTENT   // 요청 형식은 맞지만 업무 규칙상 불가 (422)
+            is MissingUserException -> HttpStatus.UNAUTHORIZED
         }
         return ProblemDetail.forStatusAndDetail(status, e.message ?: "").apply {
             setProperty("code", e.code)
