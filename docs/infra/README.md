@@ -172,7 +172,7 @@ services/ 등 push → 테스트 → amd64 이미지 → ghcr.io/utopiandreams/<
   → deploy/apps/<서비스>/values.yaml의 tag 커밋 (github-actions[bot]) → Argo CD 반영 → 롤링 업데이트
 ```
 
-새 서비스 추가: ① 워크플로 `matrix.service`에 이름 추가 ② `deploy/apps/<서비스>/values.yaml` ③ `deploy/argocd/apps/<서비스>.yaml` (core.yaml 복사). 첫 push 후 GHCR 패키지를 public으로 바꾼다.
+새 서비스 추가: ① 워크플로 `matrix.service`에 이름 추가 ② `deploy/apps/<서비스>/values.yaml` ③ `deploy/argocd/apps/<서비스>.yaml` (core.yaml 복사). GHCR 패키지는 손댈 필요 없다: public 레포에서 Actions가 올린 패키지는 레포에 연결되어 public으로 생긴다 (2026-11-14 gateway 추가 때 익명 pull 200으로 확인).
 
 공통 차트의 실무 포인트:
 - **CPU limit 없음, 메모리 limit만.** JVM 기동 때 CPU 스로틀링 → startupProbe 실패 → 재시작 루프를 피한다. 힙은 메모리 limit의 75%.
