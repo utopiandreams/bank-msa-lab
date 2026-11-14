@@ -153,9 +153,9 @@
 
 ### 백로그 (여유 있는 주에 끼워 넣기)
 - [ ] **설계 심화 트랙 (2026-11-14 추가, 상시):** 목표는 분산 흐름 설계를 "겉핥기"에서 "능숙함"으로. 개발자 요청
-  - **종이 설계 연습** `docs/design-drills/`: 주 1문제, 코드 없이 30분. 개발자가 템플릿(홉 분석표 · 상태 머신 · 장애 시나리오 · 중복 · 대사)을 채우고 Claude가 장애 질문으로 리뷰. 00(예시) → 01 주문 결제 → **04 타행 이체(5주 차 전에, ADR-0002 초안)** → 02 → 03 → 05 → 06 → 07
+  - **종이 설계 연습** `docs/design-drills/`: 주 1문제, 코드 없이 30분. 개발자가 템플릿(홉 분석표 · 상태 머신 · 장애 시나리오 · 중복 · 대사)을 채우고 Claude가 장애 질문으로 리뷰. 00(예시) → 01 주문 결제 → **04 타행 이체(5주 차 전에, ADR-0003 초안)** → 02 → 03 → 05 → 06 → 07
   - **주차별 심화 예비 재료** (해당 주차에 여유가 있으면 끼워 넣기):
-    - 5주: 사가를 **설계 먼저** (04번 연습 → ADR-0002), 보상 실패·보상 멱등, 오케스트레이션 vs 코레오그래피를 같은 흐름으로 둘 다 그려 비교. 워크플로 엔진(Temporal)과 손구현 사가 비교는 정리만 (도입하지 않음)
+    - 5주: 사가를 **설계 먼저** (04번 연습 → ADR-0003), 보상 실패·보상 멱등, 오케스트레이션 vs 코레오그래피를 같은 흐름으로 둘 다 그려 비교. 워크플로 엔진(Temporal)과 손구현 사가 비교는 정리만 (도입하지 않음)
     - 6주: Outbox 발행 방식 비교 (폴링 vs CDC), 멱등 컨슈머의 처리 기록 보관 기간
     - 8주: **상태 변경 이력 테이블**(거래 하나의 타임라인), **에이징 리포트**(PROCESSING·UNKNOWN 체류 시간), 대사 불일치 분류(우리만 / 상대만 / 금액 다름)와 **수작업 조정 전표**(작성자·승인자 분리, 감사 로그), 해소 스케줄러와 고객 재시도의 경합(낙관적 락)
     - 13주: 패널에 **PROCESSING·UNKNOWN 체류 시간 지표** → 카오스 때 멈춘 송금이 쌓였다 해소되는 장면
@@ -163,6 +163,9 @@
 - [ ] **Flyway 복습 (다음 세션 첫 순서, 2026-11-14 실습 일부 완료: transfer V2 적용·`flyway_schema_history` 확인, search_path 장애 경험 → 개념 정리만 남음):** 번호 붙은 SQL을 순서대로 한 번씩만 실행, `flyway_schema_history` 기록 테이블, 이미 적용된 파일을 고치면 안 되는 이유(체크섬). 실습: 클러스터 DB에서 기록 테이블 조회 → V2 추가해 push → 적용 확인
 - [ ] **스토리지 복습 (PVC · PV · 마운트, CloudNativePG):** PVC(요청서) → PV(실제 디스크) → volumeMounts(컨테이너 경로) 연결, local-path가 노드에 묶이는 한계, 오퍼레이터가 대신 만들어 주는 것. 실습: DB 파드 삭제 후 데이터 유지 확인, DB가 올라간 노드 끄기. 재료: `deploy/platform/core-db/cluster.yaml`, `kubectl -n bank get pvc,pv`. 늦어도 17주 차(DB 다운 실험) 전에
 - [ ] **배포 파이프라인 복습 (Dockerfile · CI · 공통 Helm 차트):** Dockerfile 최적화(레이어 분리로 코드만 바뀌면 수십 KB만 전송, 멀티스테이지, 비root), CI 워크플로 세부(캐시, `concurrency`, amd64 지정, 태그 커밋 충돌 처리), 그리고 차트: JVM 메모리(`MaxRAMPercentage`, 왜 CPU limit을 안 거나), 프로브 3종(startup·liveness·readiness), 무중단 롤링(`maxSurge`/`maxUnavailable`)과 종료 순서(preStop → SIGTERM → graceful shutdown). 재료: `docs/infra/README.md` 배포 구조 섹션, `deploy/helm/spring-service/`. 직접 파드를 죽이고 롤링하면서 확인하는 방식으로. 늦어도 17주 차(graceful shutdown·카오스) 전에
+- [ ] **노드 확장 (2026-11-14 추가, 4주 차 Kafka 전에 추천):** 집에 남는 PC(32GB, Windows·Linux 멀티부팅, Proxmox 없음)를 클러스터에 추가. 메모리 병목 해소 + 물리 호스트 2대가 되어 17주 차에 "호스트 통째로 다운"을 진짜로 재현 가능. 방식은 해당 세션에서 결정 (후보: Linux에 k3s agent 직접 설치 / Proxmox 설치)
+- [ ] **인증 서버 분리 (2026-11-14 추가, 노드 확장 뒤):** gateway 학습용 발급(HS256) → Keycloak(RS256 + JWKS). 키 교체(`kid`), 토큰 폐기(짧은 TTL + 리프레시, 블랙리스트), **인증 서버 장애 실험**(로컬 검증이라 기존 사용자 송금은 계속됨 vs introspection 방식은 단일 장애점) → 패널 버튼 "인증 서버 죽이기"
+- [ ] **NetworkPolicy · 제로 트러스트 (2026-11-14 추가):** gateway 뒤 서비스가 `X-User-Id` 헤더를 그대로 믿는 문제(파드 하나가 뚫리면 횡적 이동으로 위조 가능). 선택지: NetworkPolicy로 "transfer는 gateway에서만" / 서비스도 JWT 재검증. 위조 요청을 먼저 재현한 뒤 막는다
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
 Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮길 것을 전제로** 시나리오를 `load-test/`에 하나씩 분리해 둔다. 실험 스위치도 처음부터 설정값으로 바꿀 수 있게 만든다 (하드코딩 금지).
