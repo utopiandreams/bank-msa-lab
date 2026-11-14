@@ -206,6 +206,10 @@ GitOps 함정 메모:
 - [쿠버네티스 서비스 네트워킹과 MetalLB](notes/k8s-service-networking.md): 파드 IP·ClusterIP·NodePort·LoadBalancer, ARP, MetalLB L2/BGP, Ingress와의 관계
 - [GitOps와 Argo CD는 어떻게 배포하나](notes/gitops-argocd.md): Git과 클러스터 비교·적용, 롤링 업데이트, 이미지 배포 흐름(CI + CD)
 
+### 작업 절차 (runbooks)
+
+- [두 번째 Proxmox 호스트 설치](runbooks/proxmox2-install.md): 개발자가 USB로 설치하는 절차, `172.30.1.201` (2026-11-14 작성, 미설치)
+
 ## 5. 결정 기록
 
 큰 결정은 `docs/adr/`에 ADR로 남기고, 여기에는 한 줄 요약과 링크만 둔다.
