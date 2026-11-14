@@ -12,3 +12,4 @@ rootProject.name = "bank-msa-lab"
 
 include(":services:core")
 include(":services:transfer")
+include(":services:gateway")

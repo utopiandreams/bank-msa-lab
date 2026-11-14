@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 라우팅 표: "이 경로로 오면 저 서비스로". 경로는 바꾸지 않고 그대로 넘긴다 (/transfers/abc → transfer의 /transfers/abc)
+          routes:
+            - id: transfer
+              uri: ${TRANSFER_BASE_URL:http://transfer}   # 클러스터 내부 DNS: Service "transfer"(포트 80)
+              predicates:
+                - Path=/transfers/**                      # /transfers 자체도 매칭된다 (**는 0개 이상의 경로 조각)
+            # core(/postings)는 일부러 라우팅하지 않는다: 고객의 송금 입구는 transfer 하나 (ADR-0002 결정 4)
+          # 다운스트림 호출 타임아웃 (CLAUDE.md 7장: 외부 호출에는 반드시 타임아웃)
+          httpclient:
+            connect-timeout: 1000   # ms. 클러스터 내부라 1초 넘으면 대상이 없거나 네트워크 문제
+            # transfer는 core를 최대 3초(read-timeout) 기다린다. 그보다 짧으면 transfer가 아직 처리 중인데
+            # gateway가 먼저 504를 내서, 고객은 실패로 알고 재시도한다 → 바깥 타임아웃 > 안쪽 타임아웃
+            response-timeout: 5s
+  lifecycle:
+    timeout-per-shutdown-phase: 30s   # preStop 5초 + 30초 < terminationGracePeriodSeconds 45초 (deploy/helm/spring-service)
+
+# 쿠버네티스가 기대는 설정. 기본값과 같지만 버전업으로 바뀌지 않게 명시한다
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+server:
+  shutdown: graceful
