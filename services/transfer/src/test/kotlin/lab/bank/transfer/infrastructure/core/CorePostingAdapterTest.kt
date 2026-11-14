@@ -68,10 +68,11 @@ class CorePostingAdapterTest {
         }
 
         @Test
-        fun `요청 형식 - 송금 ID를 멱등 키 헤더로, 보내는·받는 계좌를 뒤집지 않고 보낸다`() {
+        fun `요청 형식 - 송금 ID를 멱등 키 헤더로, 요청자를 X-User-Id로, 보내는·받는 계좌를 뒤집지 않고 보낸다`() {
             server.expect(requestTo("http://core/postings/transfers"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Idempotency-Key", transfer.id.toString()))
+                .andExpect(header("X-User-Id", "chulsoo"))   // core의 소유자 검사 재료 (G-4)
                 .andExpect(jsonPath("$.fromAccountId").value(transfer.fromAccountId.toString()))
                 .andExpect(jsonPath("$.toAccountId").value(transfer.toAccountId.toString()))
                 .andExpect(jsonPath("$.amount").value(10_000))

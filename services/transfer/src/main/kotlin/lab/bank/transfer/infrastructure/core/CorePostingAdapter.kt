@@ -26,6 +26,9 @@ class CorePostingAdapter(
             coreRestClient.post()
                 .uri("/postings/transfers")
                 .header(IDEMPOTENCY_KEY_HEADER, transfer.id.toString())   // 송금 ID = core 쪽 멱등 키
+                // 요청자 전파: core가 "보내는 계좌의 주인 == 요청자"를 출금 트랜잭션 안에서 검사한다 (G-4).
+                // 남의 계좌면 core는 404 ACCOUNT_NOT_FOUND → 기존 분류대로 Rejected → FAILED (시도 기록이 남는다)
+                .header(USER_ID_HEADER, transfer.requesterId.value)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(CoreTransferRequest(transfer.fromAccountId, transfer.toAccountId, transfer.amount.value))
                 // exchange: 4xx·5xx도 예외로 바꾸지 않고 응답을 그대로 받는다 → 분류를 classify 한곳에서 한다
@@ -87,5 +90,6 @@ class CorePostingAdapter(
     companion object {
         private val log = LoggerFactory.getLogger(CorePostingAdapter::class.java)
         private const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+        private const val USER_ID_HEADER = "X-User-Id"
     }
 }
