@@ -1,0 +1,27 @@
+# gateway: 공통 차트 + gateway values. 클러스터의 외부 진입점 (ADR-0002)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/helm/spring-service
+    helm:
+      releaseName: gateway
+      valueFiles:
+        - ../../apps/gateway/values.yaml   # 차트 경로 기준 상대 경로 (같은 레포 안이면 허용)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank   # 모든 뱅킹 서비스를 한 네임스페이스에 둔다 (12주 차 RBAC의 단위)
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
