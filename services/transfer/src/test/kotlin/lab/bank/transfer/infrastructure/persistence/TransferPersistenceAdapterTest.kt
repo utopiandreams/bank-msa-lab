@@ -5,6 +5,7 @@ import lab.bank.transfer.application.port.out.DuplicateIdempotencyKeyException
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
+import lab.bank.transfer.domain.UserId
 import lab.bank.transfer.domain.TransferStatus
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -39,6 +40,7 @@ class TransferPersistenceAdapterTest {
     private fun transfer(
         id: UUID = UUID.randomUUID(),
         key: String = "key-${UUID.randomUUID()}",
+        requester: String = "chulsoo",
         from: UUID = UUID.randomUUID(),
         to: UUID = UUID.randomUUID(),
         amount: Long = 10_000,
@@ -46,11 +48,11 @@ class TransferPersistenceAdapterTest {
         failureCode: String? = null,
         coreEntryId: UUID? = null,
         version: Long? = null,
-    ) = Transfer(id, IdempotencyKey(key), from, to, Amount(amount), status, failureCode, coreEntryId, now, now, version)
+    ) = Transfer(id, UserId(requester), IdempotencyKey(key), from, to, Amount(amount), status, failureCode, coreEntryId, now, now, version)
 
     // 같은 송금의 "다음 상태"를 복원 생성자로 흉내 낸다 (UNKNOWN → FAILED 경합처럼 전이 순서를 자유롭게 만들려고)
     private fun Transfer.withStatus(status: TransferStatus, failureCode: String? = null, coreEntryId: UUID? = null) =
-        Transfer(id, idempotencyKey, fromAccountId, toAccountId, amount, status, failureCode, coreEntryId, createdAt, now, version)
+        Transfer(id, requesterId, idempotencyKey, fromAccountId, toAccountId, amount, status, failureCode, coreEntryId, createdAt, now, version)
 
     @Test
     fun `새 송금을 저장하고 조회하면 모든 필드가 그대로다`() {
@@ -123,9 +125,25 @@ class TransferPersistenceAdapterTest {
         val saved = adapter.save(transfer(key = "find-me", status = TransferStatus.PROCESSING))
         em.clear()
 
-        val found = assertNotNull(adapter.findByIdempotencyKey(IdempotencyKey("find-me")))
+        val found = assertNotNull(adapter.findByIdempotencyKey(UserId("chulsoo"), IdempotencyKey("find-me")))
         assertEquals(saved.id, found.id)
+        assertEquals(UserId("chulsoo"), found.requesterId)
         assertEquals(IdempotencyKey("find-me"), found.idempotencyKey)
+    }
+
+    @Test
+    fun `멱등 키는 요청자별 - 다른 사용자의 같은 키로는 찾지 못한다`() {
+        adapter.save(transfer(key = "shared-key", requester = "chulsoo", status = TransferStatus.PROCESSING))
+        em.clear()
+
+        assertNull(adapter.findByIdempotencyKey(UserId("younghee"), IdempotencyKey("shared-key")))
+    }
+
+    @Test
+    fun `다른 사용자는 같은 멱등 키로 저장할 수 있다 - UNIQUE는 (요청자, 키)`() {
+        adapter.save(transfer(key = "shared-key-2", requester = "chulsoo", status = TransferStatus.PROCESSING))
+
+        adapter.save(transfer(key = "shared-key-2", requester = "younghee", status = TransferStatus.PROCESSING))   // 예외 없음
     }
 
     @Test

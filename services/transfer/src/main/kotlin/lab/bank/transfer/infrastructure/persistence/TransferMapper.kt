@@ -3,12 +3,14 @@ package lab.bank.transfer.infrastructure.persistence
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
+import lab.bank.transfer.domain.UserId
 
 // 도메인 ↔ 저장 모델 변환. 헥사고날의 대가: 필드를 추가하면 Transfer, TransferJpaEntity, 여기, Flyway 네 군데를 고친다
 object TransferMapper {
 
     fun toEntity(transfer: Transfer) = TransferJpaEntity(
         id = transfer.id,
+        requesterId = transfer.requesterId.value,
         idempotencyKey = transfer.idempotencyKey.value,
         fromAccountId = transfer.fromAccountId,
         toAccountId = transfer.toAccountId,
@@ -24,6 +26,7 @@ object TransferMapper {
     // 복원용 생성자를 쓴다: 도메인 메서드(상태 전이 검사)를 거치지 않고 저장된 그대로 되살린다
     fun toDomain(entity: TransferJpaEntity) = Transfer(
         id = entity.id,
+        requesterId = UserId(entity.requesterId),
         idempotencyKey = IdempotencyKey(entity.idempotencyKey),
         fromAccountId = entity.fromAccountId,
         toAccountId = entity.toAccountId,

@@ -17,6 +17,7 @@ import lab.bank.transfer.domain.TransferStatus.FAILED
 import lab.bank.transfer.domain.TransferStatus.PROCESSING
 import lab.bank.transfer.domain.TransferStatus.REQUESTED
 import lab.bank.transfer.domain.TransferStatus.UNKNOWN
+import lab.bank.transfer.domain.UserId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
@@ -30,20 +31,21 @@ class TransferUseCaseImpl(
 
 
     /**
-     * 같은 고객 멱등 키의 송금이 있으면 재요청으로 처리하고(replay), 없으면 새로 만든다.
+     * 같은 요청자의 같은 고객 멱등 키 송금이 있으면 재요청으로 처리하고(replay), 없으면 새로 만든다.
      *
      * 처리중 커밋 → 트랜잭션 밖에서 core 호출 → 결과 커밋 (T-1). core 호출 중엔 DB 커넥션을 쥐고 있지 않다.
      */
-    override fun transfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): TransferRequestResult {
+    override fun transfer(requesterId: UserId, idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): TransferRequestResult {
         validate(fromAccountId, toAccountId)
-        transferRepository.findByIdempotencyKey(idempotencyKey)?.let { return replay(it, fromAccountId, toAccountId, amount) }
+        // 키 범위 = 요청자별 (Flyway V3). 다른 사용자가 같은 키를 써도 서로 보이지 않는다
+        transferRepository.findByIdempotencyKey(requesterId, idempotencyKey)?.let { return replay(it, fromAccountId, toAccountId, amount) }
 
         val processing = try {
-            startInTransaction(Transfer.request(idempotencyKey, fromAccountId, toAccountId, amount))
+            startInTransaction(Transfer.request(requesterId, idempotencyKey, fromAccountId, toAccountId, amount))
         } catch (e: DuplicateIdempotencyKeyException) {
             // 같은 키 동시 요청에서 늦은 쪽: 둘 다 "없음"을 보고 INSERT했고 먼저 커밋한 쪽이 이겼다.
             // 트랜잭션 밖에서 잡았으니 새로 읽으면 이긴 쪽의 송금이 보인다 → 재요청으로 처리 (재시도는 이 한 번뿐)
-            val winner = transferRepository.findByIdempotencyKey(idempotencyKey)
+            val winner = transferRepository.findByIdempotencyKey(requesterId, idempotencyKey)
                 ?: throw IllegalStateException("멱등 키 중복인데 송금이 없음: ${idempotencyKey.value}", e)
             return replay(winner, fromAccountId, toAccountId, amount)
         }

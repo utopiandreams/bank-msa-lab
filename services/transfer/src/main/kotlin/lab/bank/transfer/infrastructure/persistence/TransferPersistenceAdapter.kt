@@ -4,6 +4,7 @@ import lab.bank.transfer.application.port.out.DuplicateIdempotencyKeyException
 import lab.bank.transfer.application.port.out.TransferRepository
 import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
+import lab.bank.transfer.domain.UserId
 import org.hibernate.exception.ConstraintViolationException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
@@ -33,8 +34,8 @@ class TransferPersistenceAdapter(
     override fun findById(id: UUID): Transfer? =
         jpaRepository.findByIdOrNull(id)?.let(TransferMapper::toDomain)
 
-    override fun findByIdempotencyKey(idempotencyKey: IdempotencyKey): Transfer? =
-        jpaRepository.findByIdempotencyKey(idempotencyKey.value)?.let(TransferMapper::toDomain)
+    override fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): Transfer? =
+        jpaRepository.findByRequesterIdAndIdempotencyKey(requesterId.value, idempotencyKey.value)?.let(TransferMapper::toDomain)
 
     // Spring 예외 안쪽의 Hibernate 예외가 DB가 알려 준 제약 이름을 갖고 있다
     private fun violatedConstraint(e: DataIntegrityViolationException): String? =
@@ -44,6 +45,6 @@ class TransferPersistenceAdapter(
             ?.constraintName
 
     companion object {
-        private const val IDEMPOTENCY_KEY_CONSTRAINT = "uq_transfer_idempotency_key"   // Flyway V2
+        private const val IDEMPOTENCY_KEY_CONSTRAINT = "uq_transfer_requester_idempotency_key"   // Flyway V3 (V2의 전역 제약을 교체)
     }
 }

@@ -4,6 +4,7 @@ import lab.bank.transfer.application.TransferQuery
 import lab.bank.transfer.application.TransferUseCase
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
+import lab.bank.transfer.domain.UserId
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -34,11 +35,13 @@ class TransferController(
     // 다른 400들과 응답 형식(ProblemDetail + code)을 맞추려고
     @PostMapping
     fun create(
+        @RequestHeader(USER_ID_HEADER, required = false) userId: String?,   // gateway가 토큰의 sub로 덮어쓴 값 (ADR-0002)
         @RequestHeader(IDEMPOTENCY_KEY_HEADER, required = false) idempotencyKey: String?,
         @RequestBody request: CreateTransferRequest,
     ): ResponseEntity<TransferResponse> {
         // 원시 값 → 값 객체 변환이 곧 검증. 실패하면 InvalidIdempotencyKeyException / InvalidAmountException → 400
         val result = transferUseCase.transfer(
+            UserId.fromHeader(userId),   // 없으면 MissingUserException → 401 (멱등 키 검사보다 먼저: 누구인지가 먼저)
             IdempotencyKey.fromHeader(idempotencyKey),
             request.fromAccountId,
             request.toAccountId,
@@ -53,6 +56,7 @@ class TransferController(
 
     companion object {
         const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+        const val USER_ID_HEADER = "X-User-Id"
     }
 
     // 송금은 우리가 발급한 ID로 찾는 자원이라 없으면 404 (core 상태 조회는 "처리 안 됨"이 정상 답이라 200이었던 것과 다르다)

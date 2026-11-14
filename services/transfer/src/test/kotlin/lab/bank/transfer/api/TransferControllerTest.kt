@@ -38,16 +38,17 @@ class TransferControllerTest {
 
     private fun newKey() = "key-${UUID.randomUUID()}"
 
-    // key = null이면 헤더를 아예 안 보낸다
-    private fun postTransfer(body: String, key: String? = newKey()): ResultActionsDsl =
+    // key·user = null이면 헤더를 아예 안 보낸다. user는 gateway가 토큰의 sub로 붙여 주는 값 (ADR-0002)
+    private fun postTransfer(body: String, key: String? = newKey(), user: String? = "chulsoo"): ResultActionsDsl =
         mockMvc.post("/transfers") {
             key?.let { header("Idempotency-Key", it) }
+            user?.let { header("X-User-Id", it) }
             contentType = MediaType.APPLICATION_JSON
             content = body
         }
 
-    private fun postTransfer(from: UUID, to: UUID, amount: Long, key: String? = newKey()) =
-        postTransfer("""{"fromAccountId":"$from","toAccountId":"$to","amount":$amount}""", key)
+    private fun postTransfer(from: UUID, to: UUID, amount: Long, key: String? = newKey(), user: String? = "chulsoo") =
+        postTransfer("""{"fromAccountId":"$from","toAccountId":"$to","amount":$amount}""", key, user)
 
     // ───────────── 정상 ─────────────
 
@@ -134,6 +135,15 @@ class TransferControllerTest {
     }
 
     // ───────────── 고객 멱등 키 (T-2) ─────────────
+
+    @Test
+    fun `X-User-Id 없음 - 401 MISSING_USER, core를 부르지 않는다 (gateway를 거치지 않은 호출)`() {
+        postTransfer(from, to, 10_000, user = null).andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.code") { value("MISSING_USER") }
+        }
+        assertTrue(fakeCore.calls.isEmpty())
+    }
 
     @Test
     fun `멱등 키 헤더 없음 - 400 INVALID_IDEMPOTENCY_KEY, core를 부르지 않는다`() {

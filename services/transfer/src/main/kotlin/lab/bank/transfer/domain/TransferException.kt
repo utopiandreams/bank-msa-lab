@@ -23,6 +23,10 @@ class SameAccountsException(fromAccountId: UUID, toAccountId: UUID) :
 class InvalidIdempotencyKeyException(reason: String) :
     TransferException("INVALID_IDEMPOTENCY_KEY", "멱등 키가 올바르지 않습니다: $reason")
 
+// 누가 요청했는지 모른다 (X-User-Id 없음). 클라이언트가 고칠 수 있는 400이 아니라 인증 문제 → 401
+class MissingUserException(reason: String) :
+    TransferException("MISSING_USER", "요청자를 알 수 없습니다: $reason")
+
 // 같은 키로 다른 내용(계좌·금액)이 왔다: 키를 재사용한 클라이언트 버그. 먼저 처리된 송금과 충돌 → 409
 class IdempotencyConflictException(idempotencyKey: IdempotencyKey) :
     TransferException("IDEMPOTENCY_CONFLICT", "같은 멱등 키로 다른 내용의 송금이 이미 있습니다: ${idempotencyKey.value}")

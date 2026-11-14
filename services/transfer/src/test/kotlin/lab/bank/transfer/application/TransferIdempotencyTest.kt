@@ -11,6 +11,7 @@ import lab.bank.transfer.domain.IdempotencyConflictException
 import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.TransferStatus
+import lab.bank.transfer.domain.UserId
 import lab.bank.transfer.infrastructure.persistence.TransferPersistenceAdapter
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -62,14 +63,16 @@ class TransferIdempotencyTest {
 
     private fun newKey() = IdempotencyKey("key-${UUID.randomUUID()}")
 
-    private fun request(key: IdempotencyKey, amount: Long = 10_000, to: UUID = this.to) =
-        transferUseCase.transfer(key, from, to, Amount(amount))
+    private val chulsoo = UserId("chulsoo")
+
+    private fun request(key: IdempotencyKey, amount: Long = 10_000, to: UUID = this.to, requester: UserId = chulsoo) =
+        transferUseCase.transfer(requester, key, from, to, Amount(amount))
 
     // 이미 저장된 송금을 원하는 상태로 만들어 둔다 (PROCESSING·UNKNOWN은 정상 흐름으로는 멈춰 있게 만들기 어려워서)
     private fun existing(key: IdempotencyKey, status: TransferStatus, amount: Long = 10_000): Transfer {
         val now = Instant.now()
         return transferRepository.save(
-            Transfer(UUID.randomUUID(), key, from, to, Amount(amount), status, null, null, now, now, null),
+            Transfer(UUID.randomUUID(), chulsoo, key, from, to, Amount(amount), status, null, null, now, now, null),
         )
     }
 
@@ -85,6 +88,34 @@ class TransferIdempotencyTest {
         assertFalse(result.replayed)
         assertEquals(TransferStatus.COMPLETED, result.transfer.status)
         assertEquals(1, fakeCore.calls.size)
+    }
+
+    // ───────────── 키 범위: 요청자별 (Flyway V3) ─────────────
+
+    // 재현 (2026-11-14 클러스터): 전역 키일 때 영희가 철수와 같은 키·같은 내용으로 보내 철수의 송금을 200으로 받았다
+    @Test
+    fun `다른 사용자가 같은 키·같은 내용 - 남의 송금을 돌려주지 않고 각자 새 송금`() {
+        val key = newKey()
+        val chulsoos = request(key)
+
+        val youngheesResult = request(key, requester = UserId("younghee"))
+
+        assertFalse(youngheesResult.replayed)
+        assertTrue(chulsoos.transfer.id != youngheesResult.transfer.id)
+        assertEquals(UserId("younghee"), youngheesResult.transfer.requesterId)
+        assertEquals(2, fakeCore.calls.size)
+    }
+
+    // 재현 (2026-11-14 클러스터): 전역 키일 때 영희의 정상 송금이 철수의 키와 겹쳐 409로 거절됐다
+    @Test
+    fun `다른 사용자가 같은 키·다른 내용 - 409가 아니라 새 송금`() {
+        val key = newKey()
+        request(key)
+
+        val result = request(key, amount = 99_000, requester = UserId("younghee"))
+
+        assertFalse(result.replayed)
+        assertEquals(TransferStatus.COMPLETED, result.transfer.status)
     }
 
     // ───────────── 끝 상태: 그대로 반환 ─────────────

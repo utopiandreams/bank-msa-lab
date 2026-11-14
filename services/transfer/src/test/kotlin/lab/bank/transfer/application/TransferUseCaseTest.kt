@@ -7,6 +7,7 @@ import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.TransferRepository
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
+import lab.bank.transfer.domain.UserId
 import lab.bank.transfer.domain.SameAccountsException
 import lab.bank.transfer.domain.TransferStatus
 import org.junit.jupiter.api.BeforeEach
@@ -45,7 +46,7 @@ class TransferUseCaseTest {
 
     // 매번 새 멱등 키 = 서로 다른 송금 의도 (멱등 동작 자체는 TransferIdempotencyTest)
     private fun transfer(from: UUID, to: UUID, amount: Amount) =
-        transferUseCase.transfer(IdempotencyKey("key-${UUID.randomUUID()}"), from, to, amount).transfer
+        transferUseCase.transfer(UserId("chulsoo"), IdempotencyKey("key-${UUID.randomUUID()}"), from, to, amount).transfer
 
     // DB에서 다시 읽는다: use case가 돌려준 객체가 아니라 실제로 커밋된 상태를 본다
     private fun reload(id: UUID) = assertNotNull(transferRepository.findById(id))
