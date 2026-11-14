@@ -132,6 +132,7 @@ class GatewayAuthTest {
         @DynamicPropertySource
         fun props(registry: DynamicPropertyRegistry) {
             registry.add("TRANSFER_BASE_URL") { FakeTransfer.baseUrl }
+            registry.add("CORE_BASE_URL") { FakeTransfer.baseUrl }
             registry.add("gateway.jwt.secret") { TestJwt.SECRET }
         }
     }

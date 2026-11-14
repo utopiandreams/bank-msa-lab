@@ -55,6 +55,18 @@ class GatewayRoutingTest {
     }
 
     @Test
+    fun `accounts 경로는 core로 넘기고, X-User-Id는 토큰의 sub로 붙인다`() {
+        client.post().uri("/accounts")
+            .header("X-User-Id", "younghee")   // 위조 시도: 영희 이름으로 계좌 개설
+            .exchange()
+            .expectStatus().isCreated
+
+        val r = FakeTransfer.received.single()
+        assertEquals("/accounts", r.path)
+        assertEquals(listOf("chulsoo"), r.header("X-User-Id"))
+    }
+
+    @Test
     fun `core의 postings는 gateway에 열지 않는다 - 토큰이 있어도 404이고 아무 데도 전달되지 않는다`() {
         client.post().uri("/postings/transfers").exchange().expectStatus().isNotFound
 
@@ -72,6 +84,7 @@ class GatewayRoutingTest {
         @DynamicPropertySource
         fun props(registry: DynamicPropertyRegistry) {
             registry.add("TRANSFER_BASE_URL") { FakeTransfer.baseUrl }
+            registry.add("CORE_BASE_URL") { FakeTransfer.baseUrl }   // 가짜 서버 하나가 core 자리도 맡는다 (경로로 구분)
             registry.add("gateway.jwt.secret") { TestJwt.SECRET }
         }
     }
