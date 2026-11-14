@@ -13,6 +13,7 @@ secretEnv:
   SPRING_DATASOURCE_USERNAME: { secret: transfer-db-app, key: username }
   SPRING_DATASOURCE_PASSWORD: { secret: transfer-db-app, key: password }
 
-# 확인용으로 외부에 연다 → http://transfer.172.30.1.240.nip.io (gateway가 생기면 닫는다)
+# 외부에 열지 않는다: 클러스터 밖 요청은 gateway만 받는다 (ADR-0002 결정 4, G-3)
+# 직접 확인이 필요하면: kubectl -n bank port-forward svc/transfer 8080:80
 ingress:
-  enabled: true
+  enabled: false

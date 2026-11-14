@@ -14,7 +14,7 @@ secretEnv:
   SPRING_DATASOURCE_USERNAME: { secret: core-db-app, key: username }
   SPRING_DATASOURCE_PASSWORD: { secret: core-db-app, key: password }
 
-# 지금은 확인용으로 외부에 연다 → http://core.172.30.1.240.nip.io
-# 3주 차에 gateway가 생기면 닫고, 외부 요청은 gateway를 거치게 한다.
+# 외부에 열지 않는다: 클러스터 밖 요청은 gateway만 받는다 (ADR-0002 결정 4, G-3)
+# 직접 확인이 필요하면: kubectl -n bank port-forward svc/core 8080:80
 ingress:
-  enabled: true
+  enabled: false
