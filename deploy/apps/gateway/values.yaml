@@ -4,7 +4,7 @@ name: gateway
 image:
   repository: ghcr.io/utopiandreams/gateway
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
-  tag: ""
+  tag: "56daf2cb14f231cc22caf92a919e72b5eaabec69"
 
 # 외부 진입점. 클러스터 밖에서 들어오는 요청은 전부 여기로 → http://gateway.172.30.1.240.nip.io
 # (core·transfer의 Ingress는 G-3에서 닫는다, ADR-0002)
