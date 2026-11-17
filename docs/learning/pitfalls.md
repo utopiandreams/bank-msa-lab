@@ -205,6 +205,8 @@ TOCTOU = Time-of-check to time-of-use.
 
 - **장면 (2026-11-18, 4주 차 K-2):** transfer가 송금 완료 후 Kafka로 이벤트를 보내는 어댑터를 만들 때. "send()는 비동기라 송금 API를 안 붙잡는다"고 생각하기 쉽다.
 - **함정:** send()는 브로커 응답은 비동기로 기다리지만, **브로커 주소(메타데이터)를 모르면 send() 호출 자체가 막힌다.** 그 상한이 `max.block.ms`이고 **기본값 60초.** Kafka가 죽으면 "알림 보내기" 때문에 **송금 API가 건마다 60초씩 멈추고**, 톰캣 스레드가 다 묶여 송금 전체가 장애가 된다 (부수 기능이 핵심 기능을 죽이는 장애 전파). `delivery.timeout.ms`(기본 2분)도 길다.
+- **send()가 막히는 두 경우:** ① 메타데이터(파티션 리더)를 모를 때 ② 프로듀서 버퍼(`buffer.memory`, 기본 32MB)가 꽉 찼을 때 (브로커가 느려 전송이 밀림). 둘 다 상한이 `max.block.ms`
+- **구조:** 비동기의 정체는 Spring KafkaTemplate이 아니라 `KafkaProducer`의 버퍼(RecordAccumulator) + **전송 전담 스레드 하나**(`kafka-producer-network-thread`, 내부는 논블로킹 I/O·epoll). 콜백(`whenComplete`)도 그 스레드에서 돈다 → **콜백에서 블로킹하면 모든 전송이 멈춘다** (이벤트 루프 블로킹과 같은 원리). 콜백은 로그 정도만
 - **원칙:** 외부 호출의 **모든** 타임아웃을 명시한다 (CLAUDE.md 7장). 프로듀서는 `max.block.ms`·`request.timeout.ms`·`delivery.timeout.ms`를 서비스 응답 시간 예산에 맞춘다. 부수 기능(알림)의 실패가 핵심 기능(송금)을 막지 않게 포트 계약을 "예외를 던지지 않는다"로.
 - 🎤 "Kafka가 죽으면 이벤트를 발행하는 API는 어떻게 되나요?" / "send()는 비동기인데 왜 막히죠?"
 - 📎 `services/transfer/.../KafkaTransferEventPublisher.kt`, `KafkaTransferEventPublisherTest` "Kafka에 못 붙어도…", `application.yaml` `spring.kafka.producer.properties`
