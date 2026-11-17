@@ -20,6 +20,21 @@
 
 참고: SSH로 접속하면 perl locale 경고가 나온다. 동작에는 문제가 없다.
 
+### 두 번째 호스트 `proxmox2` (2026-11-17 설치)
+
+| 항목 | 값 |
+| --- | --- |
+| 호스트 | `proxmox2` / `172.30.1.201` (`ssh root@172.30.1.201`, 키 인증) |
+| 하이퍼바이저 | Proxmox VE 9.2.28 (설치 9.2.2 → 바로 dist-upgrade), 무료 저장소(`pve-no-subscription`) |
+| CPU | Intel Core i5-14600K (14코어: P 6 + E 8 / 20스레드) |
+| 메모리 | DDR5 32GB (가용 약 31GB) |
+| 디스크 | WD_BLACK SN850X NVMe 1TB |
+| 네트워크 | `nic0` → 브리지 `vmbr0`. Proxmox 9의 **인터페이스 이름 고정**(pin, MAC 기준) 사용 — 커널·BIOS 업데이트로 `eno1` 같은 이름이 바뀌어 네트워크가 끊기는 사고 방지 |
+| DNS | `1.1.1.1`, `8.8.8.8`, `172.30.1.254` 순 (아래 트러블슈팅) |
+| WOL | `nic0` MAC `e8:9c:25:3d:77:19`, systemd 서비스 `wol-nic0` |
+| 관계 | 기존 호스트와 **Proxmox 클러스터로 묶지 않음** (2대는 quorum 문제). Terraform이 두 호스트에 각각 붙는다 |
+| 설치 절차 | `runbooks/proxmox2-install.md` |
+
 ### 리소스 관점의 제약
 - **병목은 CPU가 아니라 메모리(32GB)다.** 28스레드면 CPU는 넉넉하다.
 - 꺼져 있는 VM은 메모리를 쓰지 않는다. 디스크만 차지한다.
@@ -228,6 +243,9 @@ GitOps 함정 메모:
 - core: `http://core.172.30.1.240.nip.io/actuator/health` (3주 차 gateway가 생기면 닫는다)
 
 ## 7. 트러블슈팅 로그
+
+- **2026-11-17 / proxmox2에서 `apt update`가 "Temporary failure resolving"** / 인터넷(`ping 1.1.1.1`)은 되는데 공유기 DNS(`172.30.1.254:53`)가 이 호스트의 질의에 응답하지 않음 (원시 DNS 패킷으로 확인: `.254` 시간 초과, `1.1.1.1` 정상). 기존 VM들은 Terraform이 `8.8.8.8`을 두 번째 DNS로 줘서 드러나지 않았던 것 / `/etc/resolv.conf`를 `1.1.1.1` → `8.8.8.8` → `.254` 순으로. 공유기를 앞에 두면 질의마다 타임아웃(수 초)을 기다린 뒤 넘어가서 느려진다
+- **2026-11-17 / Terraform 토큰 스크립트가 PVE 9에서 실패할 뻔** / PVE 9에서 `VM.Monitor` 권한이 없어지고 `VM.GuestAgent.*`로 쪼개짐. 그리고 스크립트가 `terraform.tfvars`를 통째로 덮어써서 두 번째 호스트용으로 돌리면 기존 토큰이 지워지는 구조였음 / 버전 감지해 권한 분기, tfvars는 변수 한 줄만 교체 (`TFVAR=pve2_api_token`)
 
 `날짜 / 증상 / 원인 / 해결` 형식으로 쌓는다. 이 기록도 면접 답변 소재가 된다.
 
