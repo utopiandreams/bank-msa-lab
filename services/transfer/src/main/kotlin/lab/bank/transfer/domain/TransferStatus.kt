@@ -14,6 +14,9 @@ enum class TransferStatus {
     UNKNOWN,      // 확인필요: 타임아웃 등으로 core가 처리했는지 모름
     ;
 
+    // 끝 상태: 더 이상 바뀌지 않는다. 여기로 바뀌는 순간 송금 이벤트를 발행한다 (ADR-0003)
+    val isFinal: Boolean get() = this == COMPLETED || this == FAILED
+
     fun canTransitTo(to: TransferStatus): Boolean =
         when(this) {
             REQUESTED -> when (to) {

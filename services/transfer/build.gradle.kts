@@ -19,12 +19,15 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-flyway")   // 스키마를 SQL 파일로 버전 관리
 	runtimeOnly("org.flywaydb:flyway-database-postgresql")                   // Flyway 10+는 DB별 모듈이 분리됨
 	runtimeOnly("org.postgresql:postgresql")
+	implementation(project(":libs:common"))                                  // 이벤트 스키마 (ADR-0003)
+	implementation("org.springframework.boot:spring-boot-starter-kafka")    // 송금 끝 이벤트 발행
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 	testImplementation("org.springframework.boot:spring-boot-testcontainers")  // @ServiceConnection
 	testImplementation("org.testcontainers:testcontainers-postgresql")        // Testcontainers 2.x 모듈 이름
 	testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+	testImplementation("org.testcontainers:testcontainers-kafka")            // 발행 어댑터 테스트: 진짜 Kafka
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation(libs.mockito.kotlin)
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
