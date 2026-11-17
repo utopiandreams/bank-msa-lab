@@ -190,6 +190,7 @@
 
 **다음**
 - 노드 확장: proxmox2 워커 VM, k3s SQLite → 내장 etcd + 서버 3대(`bank-cp` / `bank-cp2` / `bank-cp3`), 호스트 하나 끄고 실측
+- k6 첫 기준선: `load-test/transfer-baseline.js` (gateway → transfer → core, constant-arrival-rate로 초당 10 → 30 → 60), p50/p95/p99·에러율·하키 스틱 지점을 `docs/experiments/`에 기준선으로
 - 5주 차 전: design-drills 04 타행 이체 (ADR-0004 초안)
 - 주말 복기: Kafka Part 1, Raft, 관측성 Part 7·8, pitfalls
 
