@@ -223,7 +223,8 @@ GitOps 함정 메모:
 
 ### 작업 절차 (runbooks)
 
-- [두 번째 Proxmox 호스트 설치](runbooks/proxmox2-install.md): 개발자가 USB로 설치하는 절차, `172.30.1.201` (2026-11-14 작성, 미설치)
+- [두 번째 Proxmox 호스트 설치](runbooks/proxmox2-install.md): 개발자가 USB로 설치하는 절차, `172.30.1.201` (2026-11-17 설치 완료)
+- [컨트롤 플레인 중재자 노트북 설치](runbooks/witness-laptop-install.md): Ubuntu Server, `bank-cp3` / `172.30.1.202` (2026-11-17 작성, 미설치)
 
 ## 5. 결정 기록
 
