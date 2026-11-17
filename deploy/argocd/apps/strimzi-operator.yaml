@@ -1,0 +1,38 @@
+# Strimzi 오퍼레이터 (Kafka를 운영하는 컨트롤러, CRD 포함). 공식 Helm 차트를 그대로 설치한다. (ADR-0003, 4주 차)
+# "Kafka판 CloudNativePG": deploy/platform/kafka의 Kafka·KafkaNodePool·KafkaTopic 선언을 보고
+# 브로커 파드·PVC·Service·설정을 만들고, 설정을 바꾸면 리더를 옮겨 가며 한 대씩 롤링 재시작한다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://strimzi.io/charts/
+    chart: strimzi-kafka-operator
+    targetRevision: 1.3.1   # 오퍼레이터 1.3.1 (2026-11-04), Kafka 4.3.x 지원
+    helm:
+      valuesObject:
+        # 오퍼레이터는 자기 네임스페이스에, Kafka 클러스터는 서비스들과 같은 bank 네임스페이스에 둔다
+        watchNamespaces:
+          - bank
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            memory: 384Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: strimzi-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Strimzi CRD도 커서 client-side apply의 annotation 크기 제한(256KB)에 걸린다 (CNPG와 같은 이유)
+      - ServerSideApply=true

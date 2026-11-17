@@ -1,0 +1,31 @@
+# Kafka 클러스터와 토픽 (Strimzi). 오퍼레이터의 CRD가 먼저 있어야 적용된다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # strimzi-operator 다음, 서비스 앞
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/platform/kafka
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank
+  syncPolicy:
+    automated:
+      prune: false   # Kafka(데이터)와 토픽은 Git에서 실수로 지워도 자동 삭제하지 않는다
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+    # metallb-config와 같은 이유: sync-wave는 오퍼레이터가 "준비될 때까지" 기다려 주지 않는다
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

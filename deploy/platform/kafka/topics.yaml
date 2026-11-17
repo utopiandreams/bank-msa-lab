@@ -1,0 +1,18 @@
+# 토픽 선언 (Strimzi Topic Operator가 실제 토픽으로 만든다). 토픽 구성이 Git에 남는다.
+#
+# transfer-events: 송금이 끝 상태(COMPLETED·FAILED)로 바뀔 때 transfer가 발행 (ADR-0003)
+#   - 키 = 송금 ID (같은 키끼리만 순서 보장, 송금 하나당 이벤트 하나)
+#   - 파티션 3: 컨슈머 병렬 처리의 상한(같은 그룹에서 파티션 하나 = 컨슈머 하나), 나중에 늘리면 키→파티션이 바뀌어
+#     순서가 깨질 수 있어 처음에 여유를 둔다, 16주 차 리밸런싱·핫 파티션 실험 재료
+#   - 복제 1: 브로커 1대
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: transfer-events
+  labels:
+    strimzi.io/cluster: bank-kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000   # 7일. 그 안이면 오프셋을 되돌려 다시 읽을 수 있다 (장애 후 재처리)
