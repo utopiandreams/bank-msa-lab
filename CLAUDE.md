@@ -146,6 +146,7 @@
 ### Phase 3. 관측성 (9~11주)
 - [ ] 9주: OpenTelemetry로 gateway → 서비스 → Kafka → 컨슈머까지 하나의 트레이스로 연결 (Tempo)
 - [ ] 10주: Prometheus·Loki·Grafana로 RED 지표, 컨슈머 랙, JVM 대시보드, 로그 ↔ 트레이스 연결
+  - 2026-11-18 결정: **기본 스택만 앞당긴다** (노드 확장 전에). `kube-prometheus-stack`(Prometheus·Grafana, 노드·쿠버네티스 기본 대시보드) + Strimzi·CloudNativePG 대시보드 + etcd 지표 + 앱 지표(`micrometer-registry-prometheus`, 2026-11-18 승인: JVM·API별 지연·커넥션 풀). 이유: 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고, 같은 대시보드를 일찍부터 반복해 봐야 평소 모양이 눈에 익는다. 서비스별 RED 대시보드 설계, Loki·Tempo, SLO·알림은 10~11주 차 그대로
 - [ ] 11주: 송금 성공률·p99 SLO 정의, Alertmanager 알림
 
 ### Phase 4. 장애 실험 컨트롤 패널 (12~13주) — 끝나면 시연 가능

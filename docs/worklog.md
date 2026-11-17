@@ -189,6 +189,7 @@
 - Kafka 프로듀서 `max.block.ms` 기본 60초면 Kafka 장애 때 송금 API가 건마다 60초 멈춤 → 1초로, 테스트로 고정 (pitfalls 20)
 
 **다음**
+- **순서 (2026-11-18 합의):** ① 관측성 기본 스택(Prometheus·Grafana, 앱 지표 포함) → ② k6 기준선을 그래프 보면서 → ③ 랜선 오면(저녁) 노드 확장을 그래프 보면서
 - 노드 확장: proxmox2 워커 VM, k3s SQLite → 내장 etcd + 서버 3대(`bank-cp` / `bank-cp2` / `bank-cp3`), 호스트 하나 끄고 실측
 - k6 첫 기준선: `load-test/transfer-baseline.js` (gateway → transfer → core, constant-arrival-rate로 초당 10 → 30 → 60), p50/p95/p99·에러율·하키 스틱 지점을 `docs/experiments/`에 기준선으로
 - 5주 차 전: design-drills 04 타행 이체 (ADR-0004 초안)
