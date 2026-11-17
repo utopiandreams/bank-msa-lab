@@ -165,6 +165,34 @@
 - 4주 차: Strimzi Kafka + notification. 그 전에 노드 확장을 할지 결정 (Kafka 브로커 메모리)
 - 주말: `docs/learning/` 복기 (11-13, 11-14, pitfalls 1·2·9·17), ADR-0002 면접 30초 답변
 
+## 2026-11-17 ~ 18 · 인프라 확장 준비 + 4주 차 Kafka·notification (4주 차 완료)
+
+**한 일**
+- 두 번째 Proxmox 호스트 `proxmox2` (i5-14600K, DDR5 32GB, NVMe 1TB, PVE 9.2): 개발자가 USB로 설치, Claude가 무료 저장소·업그레이드·WOL·최소 권한 Terraform 토큰
+- 컨트롤 플레인 중재자 노트북 `bank-cp3` (AMD A6, Ubuntu Server): 키 전용 SSH, 덮개·절전 설정, **etcd 디스크 적합성 측정** (fdatasync p99 16.6ms, 권장 10ms 미달이지만 중재자로 사용)
+- 4주 차: ADR-0003 → Strimzi 1.3.1 + Kafka 4.3.2(KRaft 1대) → transfer 발행 → notification(전용 DB, 멱등) → 클러스터에서 송금 → 알림 SENT 확인
+- 공부 자료: Raft·합의(`consensus.md`), 관측성(`observability.md`: CPU 판독표, 그래프 모양 도감, 트러블슈팅 10개, 재현 계획), pitfalls 19·20
+
+**결정**
+- 노드 확장은 9주 차(관측성) 전에. 워커 메모리 실측 13~21%라 Kafka는 기존 클러스터로 충분 ("Kafka 전에 확장"은 실측 없이 한 판단이라 정정)
+- 두 Proxmox 호스트는 클러스터로 묶지 않음 (2대는 quorum 불가). 컨트롤 플레인 HA는 세 번째 장애 영역(노트북)으로
+- 이벤트: 발행은 transfer, 끝 상태로 **바뀌는 순간**만, 키 = 송금 ID(CLAUDE.md 기본값 "계좌 ID"의 예외), 스키마는 `libs/common` 공유(타협), 커밋 뒤 바로 발행 = 6주 차 유실 재현용 구멍
+- 로드맵은 끝까지 완주 (개발자: "현업에 몰두한다고 공부가 쌓이지 않더라")
+- 백로그: 외부 공개(Cloudflare Tunnel, 13주 차 전), Tailscale, 관측성 감각 트랙, 플랫폼 엔지니어링 트랙
+
+**버그·트러블슈팅**
+- proxmox2 `apt update` 실패: 공유기 DNS가 고정 IP 호스트 질의에 응답 안 함 → 공개 DNS 우선
+- Terraform 토큰 스크립트가 tfvars를 통째로 덮어쓰는 구조 + PVE 9에서 `VM.Monitor` 권한 삭제 → 변수 한 줄만 교체, 버전 분기
+- runbook의 게이트웨이를 `.1`로 잘못 적음 (실제 `.254`) → 설치 전에 발견
+- PVE 9 설치 화면에서 랜선을 늦게 꽂아 인터페이스가 안 보임 → 재부팅. 인터페이스 이름 고정(`nic0`) 사용
+- notification Flyway V1에 `version` 컬럼 누락 → `ddl-auto: validate`가 기동 시 잡음
+- Kafka 프로듀서 `max.block.ms` 기본 60초면 Kafka 장애 때 송금 API가 건마다 60초 멈춤 → 1초로, 테스트로 고정 (pitfalls 20)
+
+**다음**
+- 노드 확장: proxmox2 워커 VM, k3s SQLite → 내장 etcd + 서버 3대(`bank-cp` / `bank-cp2` / `bank-cp3`), 호스트 하나 끄고 실측
+- 5주 차 전: design-drills 04 타행 이체 (ADR-0004 초안)
+- 주말 복기: Kafka Part 1, Raft, 관측성 Part 7·8, pitfalls
+
 ---
 
 ## 이력서 소재 (계속 갱신)
@@ -176,6 +204,8 @@
 - 서비스 성격에 따라 아키텍처 선택: 트랜잭션·락 중심 코어는 JPA 엔티티 도메인, 외부 연동 중심 송금 서비스는 헥사고날
 
 **인프라 / 플랫폼**
+- 물리 호스트 2대(Proxmox) + 중재자 노드로 확장, 합의 시스템의 과반수·장애 영역 원리에 따라 배치 결정 (2대 클러스터 금지)
+- etcd 디스크 적합성을 fio로 실측(fdatasync p99)해 노드 역할 배치에 반영
 - 온프레미스(Proxmox) 쿠버네티스 클러스터를 Terraform으로 코드화, 빈 하이퍼바이저에서 약 2분 만에 재현
 - GitOps(Argo CD) + GitHub Actions로 push → 배포 자동화, 배포 이력을 Git 커밋으로 추적
 - 공통 Helm 차트로 서비스 배포 표준화 (프로브, 메모리 limit, 무중단 롤링, graceful shutdown, 비root)
@@ -195,6 +225,11 @@
 - BOLA(객체 수준 인가 실패)를 재현해 막음: 소유자 검사를 출금과 같은 트랜잭션 안에 두어 TOCTOU 제거, 남의 자원은 404로 응답해 존재 여부 누출 방지
 - 멱등 재요청은 권한을 다시 판정하지 않도록 순서를 설계해 "돈은 빠졌는데 실패로 보이는" 경로 제거
 - 고객 멱등 키를 사용자 범위로 바꿔 다른 사용자의 거래 정보가 보이는 문제 제거 (운영 데이터 백필 포함 무중단 마이그레이션)
+
+**메시징**
+- Kafka(Strimzi, KRaft)로 송금 결과 이벤트 발행·구독, 상태 전이 시점에만 발행해 재요청 중복 발행을 구조적으로 제거
+- 멱등 컨슈머(이벤트 ID UNIQUE), poison pill 격리, 생산자 필드 추가에 견디는 소비자를 실제 Kafka로 테스트
+- 프로듀서 블로킹 타임아웃(`max.block.ms`)을 조정해 브로커 장애가 송금 API로 전파되는 경로 차단
 
 **운영 / 트러블슈팅**
 - 재시작 때만 실패하는 Flyway 장애(PostgreSQL search_path와 스키마 이름 충돌)를 운영과 같은 계정 조건의 테스트로 재현·수정

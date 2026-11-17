@@ -94,7 +94,7 @@
 
 ## 5. 로드맵과 현재 진행 상황
 
-**현재: Phase 1 / 4주 차** ← 주차가 끝날 때마다 이 줄을 갱신한다.
+**현재: Phase 2 / 5주 차** (노드 확장·컨트롤 플레인 HA는 진행 중, 백로그) ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
 > 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주 → 2026-11-12 3주 차를 2주로 늘려 총 20주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
@@ -130,12 +130,12 @@
       - [x] G-3: core·transfer Ingress 닫기 (외부 진입점은 gateway 하나)
       - [x] 멱등 키 사용자별 (transfer Flyway V3, `(requester_id, idempotency_key)` UNIQUE, 기존 행 `legacy`). 전역 키의 정보 누출을 클러스터에서 먼저 재현
       - [x] G-4: 계좌 소유자 인가 (BOLA) — core가 출금 트랜잭션 안에서 검사(멱등 판정 뒤), 남의 계좌는 없는 계좌와 같은 404, 계좌 개설·조회를 gateway 뒤로(`/accounts/**`, `X-User-Id`), transfer → core 요청자 전파. BOLA를 먼저 재현
-- [ ] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독
+- [x] 4주: Strimzi로 Kafka 구축, 송금 완료 이벤트를 `notification`이 구독 (완료 2026-11-18)
   - [x] ADR-0003 (2026-11-18): 발행은 transfer, 끝 상태로 바뀌는 순간만, 키 = 송금 ID, 스키마는 `libs/common` 공유(타협), notification 전용 DB로 멱등, 발송은 가짜(최소)
   - [x] K-1: Strimzi 1.3.1 + Kafka 4.3.2(KRaft 1대) + 토픽 `transfer-events`(파티션 3) 매니페스트 (클러스터 꺼져 있어 미적용)
   - [x] K-2: `TransferFinishedEvent`, transfer 발행(커밋 뒤 바로 발행 = 6주 차 유실 구멍, 의도), `max.block.ms` 1초(pitfalls 20). 테스트 68개 (진짜 Kafka 포함)
   - [x] K-3: notification 서비스 (PENDING INSERT → 트랜잭션 밖 발송 → SENT, `event_id` UNIQUE 멱등, poison pill 건너뜀, 일시 오류 재시도). 테스트 6개
-  - [ ] K-4: 배포 설정은 작성 완료 (notification-db, values, Argo CD, CI). **클러스터를 켜고** Kafka·notification 기동, 송금 → 알림 SENT를 클러스터에서 확인하면 4주 차 완료
+  - [x] K-4: 클러스터에서 송금 완료·잔액 부족 → transfer 발행 → notification SENT, 재요청은 발행 안 됨, 컨슈머 그룹 랙 0 확인 (2026-11-18)
 
 ### Phase 2. 정합성 (5~8주) — 끝나면 이력서에 추가
 - [ ] 5주: 타행 이체를 오케스트레이션 사가로 구현 (코어 출금 → `bank-mock` 송금 → 실패 시 출금 보상, `bank-mock`은 단순 성공/실패), 코레오그래피와 비교 정리
