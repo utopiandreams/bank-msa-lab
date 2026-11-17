@@ -17,20 +17,49 @@
 - USB 메모리 2GB 이상 (안의 내용은 지워짐)
 - 맥북 (USB 굽기용)
 
-## 1. ISO 받기
+## 1. ISO 받기 (맥 터미널)
 
-- https://www.proxmox.com/en/downloads → **Proxmox VE 9.x 최신 ISO Installer**
+2026-11-17 기준 최신은 **`proxmox-ve_9.2-1.iso`** (약 1.5GB).
+- ⚠️ 같은 폴더에 `proxmox-ve_9.2-1-arm64.iso`도 있다. **arm64가 붙지 않은 것**을 받는다 (새 PC는 인텔 = amd64)
+- 더 새 버전이 나왔으면 https://enterprise.proxmox.com/iso/ 목록에서 가장 큰 9.x 번호를 고른다
+
+```bash
+cd ~/Downloads
+curl -LO https://enterprise.proxmox.com/iso/proxmox-ve_9.2-1.iso
+
+# 다운로드가 깨지지 않았는지 확인 (체크섬). 아래 두 줄의 값이 같아야 한다
+shasum -a 256 proxmox-ve_9.2-1.iso
+curl -s https://enterprise.proxmox.com/iso/SHA256SUMS | grep ' proxmox-ve_9.2-1.iso'
+# 기대값: 4e88fe416df9b527624a175f24c9aa07c714d3332afb1ee3dbf3879573ef2c6c
+```
+
+- 왜 체크섬을 보나: 다운로드가 중간에 깨지면 설치 도중 이상한 오류가 나는데, 원인이 ISO라는 걸 알기 어렵다. 굽기 전에 30초로 배제한다
 - 기존 호스트(`172.30.1.200`)는 8.2.2지만 새로 까는 건 9.x. 두 호스트는 **Proxmox 클러스터로 묶지 않으므로**(독립 호스트) 버전이 달라도 된다
   - 묶지 않는 이유: 2대짜리 클러스터는 한 대가 꺼지면 과반수(quorum)를 잃어 남은 한 대도 VM을 관리하지 못한다. Raft·KRaft가 홀수 대를 쓰는 이유와 같다
 
 ## 2. USB 굽기 (맥)
 
-**추천: balenaEtcher** (https://etcher.balena.io)
-1. Flash from file → 받은 ISO
-2. Select target → USB (용량을 보고 맥 디스크가 아닌지 확인)
-3. Flash! → 끝나면 "읽을 수 없는 디스크" 경고가 떠도 정상 (무시하고 꺼내기)
+### 2-1. balenaEtcher 설치
+
+```bash
+brew install --cask balenaetcher
+```
+
+- 설치되면 Launchpad / 응용 프로그램에 **balenaEtcher**가 생긴다
+- 처음 열 때 "인터넷에서 다운로드한 앱" 경고가 뜨면 **열기**
+- USB에 쓰려면 관리자 권한이 필요해서, Flash 누를 때 맥 비밀번호를 한 번 묻는다
+
+### 2-2. 굽기
+
+1. USB를 꽂는다
+2. balenaEtcher 실행
+3. **Flash from file** → `~/Downloads/proxmox-ve_9.2-1.iso`
+4. **Select target** → USB 선택. **용량과 이름을 보고** 맥 내장 디스크나 외장 백업 디스크가 아닌지 확인 (Etcher는 기본적으로 내장 디스크를 숨겨 주지만, 외장 하드는 목록에 뜬다)
+5. **Flash!** → 맥 비밀번호 입력 → 쓰기(Flashing) → 검증(Validating)까지 몇 분
+6. 끝나면 맥이 "이 컴퓨터에서 읽을 수 없는 디스크" 경고를 띄울 수 있다 → **정상.** "추출"을 누르고 뽑는다 (리눅스용 파일 시스템이라 맥이 못 읽을 뿐)
 
 > 터미널(`dd`)로도 되지만 디스크 번호를 잘못 고르면 맥 디스크가 날아간다. Etcher를 쓴다.
+> 굽고 나서 USB를 다시 일반 용도로 쓰려면: 디스크 유틸리티 → USB 선택 → 지우기 (형식 ExFAT).
 
 ## 3. BIOS 설정 (새 PC)
 
