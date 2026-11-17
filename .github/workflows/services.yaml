@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - "services/**"
+      - "libs/**"            # 공통 이벤트 스키마가 바뀌면 쓰는 서비스도 다시 빌드
       - "build-logic/**"
       - "gradle/**"
       - "settings.gradle.kts"
