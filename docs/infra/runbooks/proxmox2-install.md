@@ -83,8 +83,8 @@ USB로 부팅 → **Install Proxmox VE (Graphical)**
 | **Network** | Management Interface | **유선 랜** (이름이 `enp…`로 시작. `wl…`은 Wi-Fi라 고르지 않는다) |
 | | Hostname (FQDN) | `proxmox2.lab` |
 | | IP Address (CIDR) | `172.30.1.201/24` |
-| | Gateway | `172.30.1.1` |
-| | DNS Server | `172.30.1.1` |
+| | Gateway | `172.30.1.254` (공유기. `.1` 아님, docs/infra/README.md 1장) |
+| | DNS Server | `172.30.1.254` |
 
 - IP를 `.201`로 고른 이유: 기존 호스트 `.200` 옆자리, 공유기 DHCP 범위(`1~100`, `128~148`) 밖, 쿠버네티스 노드(`.230~`)·MetalLB(`.240~.250`)와 겹치지 않음
 - 마지막 요약 화면에서 디스크와 IP를 한 번 더 확인 → Install → 끝나면 USB를 뽑고 재부팅
