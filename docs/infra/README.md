@@ -35,6 +35,33 @@
 | 관계 | 기존 호스트와 **Proxmox 클러스터로 묶지 않음** (2대는 quorum 문제). Terraform이 두 호스트에 각각 붙는다 |
 | 설치 절차 | `runbooks/proxmox2-install.md` |
 
+### 컨트롤 플레인 중재자 노트북 `bank-cp3` (2026-11-18 설치)
+
+| 항목 | 값 |
+| --- | --- |
+| 장비 | Samsung NT455R4J 노트북 (2015년쯤, 집에 있던 것) |
+| OS | Ubuntu Server 24.04.5 (Proxmox 없이 바로. VM으로 쪼갤 일이 없고 Proxmox가 메모리를 1~2GB 먹어서) |
+| 접속 | `ssh ubuntu@172.30.1.202` (설치 때 GitHub 공개키를 가져옴, **키 인증만**: 비밀번호 로그인 끔), sudo는 비밀번호 없음 (기존 노드와 같음) |
+| CPU / 메모리 | AMD A6 4코어 / 6.7GB (8GB 중 일부를 내장 그래픽이 씀) |
+| 디스크 | `SAMSUNG MZ7TE128` (PM851, 2.5인치 SATA SSD, 128GB) |
+| 네트워크 | `enp2s0` 유선, `172.30.1.202/24`, DNS `1.1.1.1`·`8.8.8.8` |
+| 노트북 설정 | 덮개 닫아도 동작(`HandleLidSwitch=ignore`), 절전 타깃 mask, 시간대 Asia/Seoul. 배터리 정상(부풀지 않음) → 정전 때 UPS 역할 |
+| 역할 (예정) | k3s 서버 3번 (etcd 멤버, 앱 파드는 taint로 막음), 항상 켜 두는 Tailscale 관문 + WOL 발신기 |
+| 설치 절차 | `runbooks/witness-laptop-install.md` |
+
+**etcd 디스크 적합성 측정 (2026-11-18, etcd 문서의 fio 방법: 2300바이트 쓰기 + fdatasync 반복, 22MB)**
+
+| 지표 | `bank-cp3` (PM851 SATA SSD) | etcd 권장 |
+| --- | --- | --- |
+| fdatasync p50 | 4.6ms | |
+| fdatasync p99 | **16.6ms** | **< 10ms** |
+| fdatasync p99.9 | 18.2ms | |
+| 쓰기 IOPS | 202 | |
+
+- 판단: 권장 기준 미달이지만 **중재자로는 쓴다.** etcd는 과반수만 확정하면 되므로 나머지 두 멤버가 빠르면 커밋은 그 둘로 이뤄진다. 선출 타임아웃(1000ms)에 비해 17ms 꼬리는 리더 선출을 일으킬 수준이 아니다. 약점: 이 노트북이 **리더가 되면** 쓰기가 이 디스크 속도를 따른다
+- 원인: 보급형 SSD는 전원 손실 보호(PLP)가 없어 fdatasync마다 실제 플래시 쓰기를 기다린다. 평균은 괜찮고 p99만 튀는 전형적인 꼬리
+- 다음: HA 구성 후 `etcd_disk_wal_fsync_duration_seconds` 관찰. 문제 시 SSD 교체. 같은 측정을 proxmox2 NVMe·기존 VM 디스크에도 돌려 비교표
+
 ### 리소스 관점의 제약
 - **병목은 CPU가 아니라 메모리(32GB)다.** 28스레드면 CPU는 넉넉하다.
 - 꺼져 있는 VM은 메모리를 쓰지 않는다. 디스크만 차지한다.
@@ -224,7 +251,7 @@ GitOps 함정 메모:
 ### 작업 절차 (runbooks)
 
 - [두 번째 Proxmox 호스트 설치](runbooks/proxmox2-install.md): 개발자가 USB로 설치하는 절차, `172.30.1.201` (2026-11-17 설치 완료)
-- [컨트롤 플레인 중재자 노트북 설치](runbooks/witness-laptop-install.md): Ubuntu Server, `bank-cp3` / `172.30.1.202` (2026-11-17 작성, 미설치)
+- [컨트롤 플레인 중재자 노트북 설치](runbooks/witness-laptop-install.md): Ubuntu Server, `bank-cp3` / `172.30.1.202` (2026-11-18 설치 완료)
 
 ## 5. 결정 기록
 
