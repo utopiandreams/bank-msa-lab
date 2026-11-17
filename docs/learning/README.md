@@ -6,6 +6,7 @@
 - 아이템마다 Claude가 💡 핵심 / 🎤 꼬리 질문 / 📎 정답지 링크를 달아 둔다. 나는 그걸로 공부하고 내 말로 요약을 쓴다 → Claude가 리뷰
 - 다 쓰려고 하지 않는다. 면접에 나올 만한 것부터, 모르는 건 "헷갈림"이라고 적기
 - 📝 표시 = `docs/infra/notes/`에 이미 노트가 있음 → 읽고 내 말로 요약만
+- **[관측성: 대시보드와 APM 읽는 법](observability.md)**: RED·USE, 계층별 지표, 트러블슈팅 10개의 그래프 모양, 돋보이는 것(리틀의 법칙, coordinated omission 등), Pinpoint·Scouter 화면 (2026-11-17)
 - **[합의와 과반수 (Raft)](consensus.md)**: 리더 선출·로그 복제·왜 홀수인가, etcd·KRaft·Redis Sentinel/Cluster·Proxmox 비교 (2026-11-17)
 - **[Kafka 공부 자료](kafka.md)**: 주차별로 필요한 Kafka 개념 지도 + 💡🎤🔬. Part 1은 4주 차 전에 (2026-11-14)
 - **[실무 함정 노트](pitfalls.md)**: 날짜와 상관없이 "여기서 실무 사고가 난다"는 함정과 원칙만 모은 곳 (2026-11-14~)
