@@ -177,7 +177,7 @@ cd infra/terraform && terraform init && terraform apply
 export KUBECONFIG=~/.kube/bank-msa-lab.yaml
 kubectl get nodes -o wide
 
-# 3) Argo CD 설치 + root 앱 등록 (최초 1회). 이후 MetalLB·hello 등은 Argo CD가 Git을 보고 설치
+# 3) Argo CD 설치 + root 앱 등록 (최초 1회). 이후 MetalLB·서비스 등은 Argo CD가 Git을 보고 설치
 ./infra/bootstrap/install-argocd.sh
 
 # 전부 지우고 다시 만들기
@@ -220,21 +220,21 @@ deploy/
 │   └── apps/                   # 여기에 Application 파일을 추가하면 Argo CD가 설치
 │       ├── metallb.yaml          (wave 0, 공식 Helm 차트)
 │       ├── metallb-config.yaml   (wave 1, IP 풀)
-│       ├── hello.yaml            (wave 2)
 │       ├── cnpg-operator.yaml    (wave 0, CloudNativePG 공식 차트)
 │       ├── core-db.yaml          (wave 1, core 전용 Postgres)
 │       ├── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
 │       ├── transfer-db.yaml      (wave 1, transfer 전용 Postgres)
-│       └── transfer.yaml         (wave 2, 공통 차트 + transfer values)
+│       ├── transfer.yaml         (wave 2, 공통 차트 + transfer values)
+│       └── ... gateway, notification(+db), bank-mock, kafka, 관측성 (파일 목록이 곧 설치 목록)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
 ├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
 ├── platform/transfer-db/       # CloudNativePG Cluster (Secret transfer-db-app, Service transfer-db-rw)
 ├── docker/spring-boot.Dockerfile  # 모든 Spring 서비스 공통 Dockerfile
 ├── helm/spring-service/        # 모든 Spring 서비스 공통 차트 (Deployment, Service, Ingress)
 └── apps/
-    ├── hello/                  # Deployment, Service, Ingress (평문 매니페스트)
     ├── core/values.yaml        # core 배포 설정. image.tag는 CI가 갱신
-    └── transfer/values.yaml    # transfer 배포 설정 (2026-11-13 추가)
+    ├── transfer/values.yaml    # transfer 배포 설정 (2026-11-13 추가)
+    └── <서비스>/values.yaml     # gateway, notification, bank-mock (서비스마다 하나)
 ```
 
 서비스 배포 흐름 (`.github/workflows/services.yaml`):
@@ -344,7 +344,7 @@ kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-passwor
 - Proxmox SSH: `ssh root@172.30.1.200`
 - kube-apiserver: `https://172.30.1.230:6443` (kubeconfig: `~/.kube/bank-msa-lab.yaml`, 레포 밖)
 - Argo CD UI: `http://argocd.172.30.1.240.nip.io` (admin / 비밀번호: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`)
-- hello 테스트 앱: `http://hello.172.30.1.240.nip.io`
+- ~~hello 테스트 앱~~: 2026-11-19 제거 (1주 차 GitOps 확인용). 헤더·네트워크 실험(X-Forwarded-For 등)에 whoami가 필요하면 `kubectl run`으로 잠깐 띄운다
 - core: `http://core.172.30.1.240.nip.io/actuator/health` (3주 차 gateway가 생기면 닫는다)
 - Grafana: `http://grafana.172.30.1.240.nip.io` (admin / 비밀번호: Secret `monitoring/grafana-admin`, 위 "관측성 기본 스택")
 - Prometheus UI: Ingress 없음 (인증이 없어서). `kubectl -n monitoring port-forward svc/kps-prometheus 9090`
@@ -358,3 +358,4 @@ kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-passwor
 
 - **2026-11-11 / MetalLB 설치 후 노드마다 `frr-k8s` 파드가 뜸 (Init 상태로 오래 걸림)** / MetalLB 0.16 차트는 BGP용 FRR-K8s 백엔드를 기본으로 켠다 / L2 모드만 쓰므로 `frrk8s.enabled: false` → Git push → Argo CD가 반영. 노드당 파드 2개에서 1개(speaker)로 줄었다.
 - **2026-11-11 / hello 응답의 `X-Forwarded-For`가 고객(맥북) IP가 아니라 `10.42.3.1`** / NodePort·LB 경로의 SNAT 때문에 원래 IP가 사라짐 (`notes/k8s-service-networking.md` 참고) / 아직 해결하지 않음. 필요해지면 Traefik 서비스에 `externalTrafficPolicy: Local`을 검토한다.
+- **2026-11-19 / Argo CD Application 파일을 지워도 앱의 리소스는 남는다 (hello 제거 중 발견)** / Application에 `resources-finalizer.argocd.argoproj.io`가 없으면 root 앱의 prune은 Application 객체만 지우고, 그 앱이 만든 Deployment·Service·Ingress는 주인 없이 남는다 / 두 단계로: ① finalizer를 붙여 push → 반영 확인 ② 파일 삭제 push → 리소스까지 정리. `CreateNamespace=true`로 생긴 네임스페이스는 앱 리소스가 아니라 남으므로 따로 지운다. 앞으로 만드는 Application에는 처음부터 finalizer를 넣는 걸 검토
