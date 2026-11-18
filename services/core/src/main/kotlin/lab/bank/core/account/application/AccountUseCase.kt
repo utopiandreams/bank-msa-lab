@@ -18,6 +18,8 @@ interface AccountUseCase {
     // posting 전용: 원장 거래 ID와 함께만 잔액을 바꾼다. 호출하는 쪽의 트랜잭션에 합류한다 (전파 REQUIRED)
     fun deposit(accountId: UUID, amount: Amount, ledgerEntryId: UUID)
     fun withdraw(accountId: UUID, amount: Amount, ledgerEntryId: UUID)
+    // 고객이 시킨 출금(타행 이체): 요청자의 계좌여야 한다 (BOLA 방지). 내부 업무 출금(withdraw)과 구분
+    fun withdrawOwned(requester: UserId, accountId: UUID, amount: Amount, ledgerEntryId: UUID)
     // 보내는 계좌는 요청자의 것이어야 한다 (BOLA 방지, G-4). 받는 계좌는 누구 것이든 된다
     fun transfer(requester: UserId, fromAccountId: UUID, toAccountId: UUID, amount: Amount, ledgerEntryId: UUID)
 }
@@ -59,6 +61,11 @@ class AccountUseCaseImpl(
     @Transactional
     override fun withdraw(accountId: UUID, amount: Amount, ledgerEntryId: UUID) {
         get(accountId).withdraw(amount, ledgerEntryId)
+    }
+
+    @Transactional
+    override fun withdrawOwned(requester: UserId, accountId: UUID, amount: Amount, ledgerEntryId: UUID) {
+        owned(get(accountId), requester).withdraw(amount, ledgerEntryId)
     }
 
     // 소유자 검사와 출금이 같은 트랜잭션 안: 검사와 사용 사이에 틈이 없다 (TOCTOU 없음, pitfalls 9)

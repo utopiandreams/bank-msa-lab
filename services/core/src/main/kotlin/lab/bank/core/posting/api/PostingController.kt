@@ -57,6 +57,30 @@ class PostingController(
             ),
         )
 
+    // 타행 이체 출금 (ADR-0004). transfer가 사가의 첫 단계로 부른다
+    @PostMapping("/interbank-withdrawals")
+    fun interbankWithdraw(
+        @RequestHeader(UserId.HEADER, required = false) userId: String?,
+        @RequestHeader(IDEMPOTENCY_KEY_HEADER) idempotencyKey: String,
+        @RequestBody request: InterbankWithdrawalRequest,
+    ): ResponseEntity<PostingResponse> =
+        respond(
+            idempotencyKey,
+            postingUseCase.interbankWithdraw(
+                UserId.fromHeader(userId), IdempotencyKey(idempotencyKey), request.accountId, Amount(request.amount),
+            ),
+        )
+
+    /**
+     * 타행 이체 출금 취소 (보상). 바디도 멱등 키 헤더도 없다: 원래 출금을 가리키는 것만으로 무엇을 얼마나 되돌릴지 정해지고,
+     * "한 출금은 한 번만 취소"를 core가 원장 제약(reverses_entry_id UNIQUE)으로 직접 보장한다 (ADR-0004)
+     */
+    @PostMapping("/interbank-withdrawals/{originalKey}/cancel")
+    fun cancelInterbankWithdraw(@PathVariable originalKey: String): ResponseEntity<PostingResponse> {
+        val result = postingUseCase.cancelInterbankWithdraw(IdempotencyKey(originalKey))
+        return respond(result.idempotencyKey, PostingResult(result.entryId, result.replayed))
+    }
+
     @GetMapping("/{idempotencyKey}")
     fun status(@PathVariable idempotencyKey: String): PostingStatusResponse =
         postingUseCase.find(IdempotencyKey(idempotencyKey))

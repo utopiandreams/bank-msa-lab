@@ -24,6 +24,11 @@ data class TransferRequest(
     val amount: Long,
 )
 
+data class InterbankWithdrawalRequest(
+    val accountId: UUID,
+    val amount: Long,
+)
+
 data class PostingResponse(
     val entryId: UUID,
     val replayed: Boolean,

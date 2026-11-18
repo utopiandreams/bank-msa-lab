@@ -37,6 +37,30 @@ class PostingUseCaseImpl(
         return retryOnceOnDuplicateKey { transferInTransaction(requester, idempotencyKey, fromAccountId, toAccountId, amount) }
     }
 
+    override fun interbankWithdraw(requester: UserId, idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
+        retryOnceOnDuplicateKey {
+            // 소유자 검사는 당행 송금과 같이 멱등 판정 뒤, 새로 처리할 때만 (pitfalls 17)
+            transactionTemplate.execute {
+                val recorded = ledgerUseCase.recordInterbankWithdraw(idempotencyKey, accountId, amount)
+                if (!recorded.replayed) {
+                    accountUseCase.withdrawOwned(requester, accountId, amount, recorded.entryId)
+                }
+                PostingResult(recorded.entryId, recorded.replayed)
+            }
+        }
+
+    override fun cancelInterbankWithdraw(originalKey: IdempotencyKey): CancelResult =
+        retryOnceOnDuplicateKey {
+            // 취소 전표와 잔액 복구가 한 트랜잭션. 이미 취소됐으면(replayed) 잔액을 다시 바꾸지 않는다
+            transactionTemplate.execute {
+                val cancel = ledgerUseCase.recordInterbankWithdrawCancel(originalKey)
+                if (!cancel.replayed) {
+                    accountUseCase.deposit(cancel.accountId, cancel.amount, cancel.entryId)
+                }
+                CancelResult(cancel.entryId, cancel.replayed, cancel.idempotencyKey)
+            }
+        }
+
     // 원장 기록과 잔액 변경이 한 트랜잭션: 둘 다 되거나 둘 다 안 된다
     private fun depositInTransaction(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
         transactionTemplate.execute {

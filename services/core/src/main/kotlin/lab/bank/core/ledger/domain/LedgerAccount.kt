@@ -4,5 +4,7 @@ package lab.bank.core.ledger.domain
 enum class LedgerAccount {
     CASH,               // 현금 (자산)
     CUSTOMER_DEPOSIT,   // 고객 예금 (부채)
-    // 5주 차: INTERBANK_UNSETTLED (타행이체 미정산)
+    // 타행이체 미정산 (가계정). 타행으로 나가는 돈이 정산(하루치 배치, 8주 차) 전까지 머문다.
+    // 잔액을 따로 저장하지 않고 이 계정 줄의 합으로 본다. 정산·취소가 끝나면 합이 0이어야 한다 (대사 포인트, ADR-0004)
+    INTERBANK_UNSETTLED,
 }

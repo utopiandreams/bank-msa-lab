@@ -15,6 +15,14 @@ interface LedgerUseCase {
     fun recordDeposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
     fun recordWithdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
     fun recordTransfer(idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): RecordedEntry
+    fun recordInterbankWithdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry
+
+    /**
+     * 타행 출금 취소(보상)를 멱등하게 기록한다. 금액·계좌는 원래 전표에서 가져온다.
+     * - 원래 전표가 없으면 OriginalEntryNotFoundException, 타행 출금이 아니면 NotCancellableEntryException
+     * - 이미 취소됐으면 기존 취소 전표 → replayed = true (한 전표는 한 번만 취소된다: reverses_entry_id UNIQUE)
+     */
+    fun recordInterbankWithdrawCancel(originalKey: IdempotencyKey): RecordedCancel
 
     // 상태 조회: 그 키로 커밋된 거래가 있으면 요약, 없으면 null
     fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary?

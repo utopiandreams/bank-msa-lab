@@ -2,6 +2,7 @@ package lab.bank.core.ledger.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import lab.bank.core.ledger.domain.exception.NotCancellableEntryException
 import lab.bank.core.shared.Amount
 import lab.bank.core.shared.IdempotencyKey
 import java.util.UUID
@@ -18,17 +19,26 @@ class JournalEntry private constructor(
     idempotencyKey: String,
     type: EntryType,
     lines: List<JournalLine>,
+    reversesEntryId: UUID? = null,
 ) {
     @Id
     val id: UUID = UUID.randomUUID()
 
     // 요청한 쪽이 만든 멱등 키 (입출금: 채널의 요청 ID, 송금: transfer의 송금 ID). DB에 UNIQUE
-    @Column(nullable = false, updatable = false, length = 64)
+    // 취소 전표는 요청한 쪽이 아니라 core가 "{원래 키}-cancel"로 만든다 (그래서 컬럼은 64자보다 넉넉하게 80)
+    @Column(nullable = false, updatable = false, length = 80)
     val idempotencyKey: String = idempotencyKey
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 20)
+    @Column(nullable = false, updatable = false, length = 30)
     val type: EntryType = type
+
+    /**
+     * 이 전표가 취소하는 원래 전표 ID (취소 전표만). DB에 UNIQUE → **한 전표는 한 번만 취소된다.**
+     * 요청한 쪽이 멱등 키를 제대로 만들어 주기를 믿지 않고, 데이터 자체가 유일함을 보장하는 자연 키 (ADR-0004)
+     */
+    @Column(updatable = false)
+    val reversesEntryId: UUID? = reversesEntryId
 
     @Column(nullable = false, updatable = false)
     val createdAt: Instant = Instant.now()
@@ -81,6 +91,32 @@ class JournalEntry private constructor(
                 JournalLine(LedgerAccount.CASH, null, Direction.CREDIT, amount.value),
             ),
         )
+
+        // 타행 출금: 고객 예금이 줄고(차변) 미정산이 는다(대변). 돈은 아직 은행 밖으로 나가지 않았다 (정산 전)
+        fun interbankWithdrawal(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount) = JournalEntry(
+            idempotencyKey.value, EntryType.INTERBANK_WITHDRAWAL,
+            listOf(
+                JournalLine(LedgerAccount.CUSTOMER_DEPOSIT, accountId, Direction.DEBIT, amount.value),
+                JournalLine(LedgerAccount.INTERBANK_UNSETTLED, null, Direction.CREDIT, amount.value),
+            ),
+        )
+
+        /**
+         * 타행 출금 취소: 원래 전표의 줄을 방향만 뒤집어 새 전표로 쓴다 (역분개).
+         * 금액·계좌를 요청에서 받지 않고 원래 전표에서 가져온다 → 출금한 것보다 많이 돌려주는 일이 구조적으로 없다
+         */
+        fun cancelOf(original: JournalEntry): JournalEntry {
+            if (original.type != EntryType.INTERBANK_WITHDRAWAL) {
+                throw NotCancellableEntryException(original.idempotencyKey, original.type.name)
+            }
+            return JournalEntry(
+                cancelKeyOf(original.idempotencyKey), EntryType.INTERBANK_WITHDRAWAL_CANCEL,
+                original._lines.map { JournalLine(it.ledgerAccount, it.accountId, it.direction.opposite(), it.amount) },
+                reversesEntryId = original.id,
+            )
+        }
+
+        fun cancelKeyOf(originalKey: String) = "$originalKey-cancel"
 
         // 당행 송금: 예금(빚)이 A에서 B로 옮겨 갈 뿐, 현금은 등장하지 않는다
         fun transfer(idempotencyKey: IdempotencyKey, from: UUID, to: UUID, amount: Amount) = JournalEntry(

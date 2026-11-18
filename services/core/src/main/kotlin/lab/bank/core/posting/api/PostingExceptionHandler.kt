@@ -2,6 +2,8 @@ package lab.bank.core.posting.api
 
 import lab.bank.core.ledger.domain.exception.IdempotencyConflictException
 import lab.bank.core.ledger.domain.exception.LedgerException
+import lab.bank.core.ledger.domain.exception.NotCancellableEntryException
+import lab.bank.core.ledger.domain.exception.OriginalEntryNotFoundException
 import lab.bank.core.posting.application.exception.PostingException
 import lab.bank.core.posting.application.exception.SameAccountTransferException
 import lab.bank.core.shared.InvalidAmountException
@@ -45,6 +47,8 @@ class PostingExceptionHandler {
     fun handle(e: LedgerException): ProblemDetail = problem(
         when (e) {
             is IdempotencyConflictException -> HttpStatus.CONFLICT
+            is OriginalEntryNotFoundException -> HttpStatus.NOT_FOUND
+            is NotCancellableEntryException -> HttpStatus.UNPROCESSABLE_CONTENT
         },
         e.message, e.code,
     )

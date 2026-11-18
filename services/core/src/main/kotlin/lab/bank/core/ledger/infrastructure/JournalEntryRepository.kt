@@ -8,4 +8,7 @@ import java.util.UUID
 interface JournalEntryRepository : JpaRepository<JournalEntry, UUID> {
     // posting이 "이미 처리된 요청인가"를 확인할 때 쓴다. Kotlin 반환 타입을 nullable로 두면 Optional 대신 null을 준다
     fun findByIdempotencyKey(idempotencyKey: String): JournalEntry?
+
+    // 이 전표를 취소한 전표가 이미 있나 (reverses_entry_id UNIQUE)
+    fun findByReversesEntryId(reversesEntryId: UUID): JournalEntry?
 }
