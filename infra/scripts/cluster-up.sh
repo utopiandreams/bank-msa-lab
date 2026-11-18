@@ -1,54 +1,104 @@
 #!/usr/bin/env bash
-# 실험 클러스터 켜기: Proxmox 호스트(Wake-on-LAN) → VM 4대 → k8s 노드 Ready 확인
+# 실험 클러스터 켜기 (호스트 단위, 병렬)
+#   cluster-up.sh            → 전부 (proxmox, proxmox2)
+#   cluster-up.sh proxmox    → 하나만
+#
+# 호스트마다: Wake-on-LAN → SSH 응답 대기 → 그 호스트의 bank-* VM을 한꺼번에 시작.
+# 호스트끼리는 서로 기다리지 않는다 (동시에 부팅). 한 대가 안 켜져도 나머지는 계속 간다.
 # 맥북이 집 네트워크(172.30.1.0/24)에 있어야 Wake-on-LAN 패킷이 닿는다.
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lab.env"
 
-# 1) Proxmox 호스트
-if pve_up; then
-  echo "[$(ts)] Proxmox 이미 켜져 있음"
-else
-  echo "[$(ts)] Proxmox 꺼져 있음 → Wake-on-LAN 매직 패킷 전송 (${PVE_MAC})"
-  python3 - "$PVE_MAC" "$BROADCAST" <<'PY'
+targets=$(resolve_targets "$@") || exit 2
+
+wake() {   # 매직 패킷: FF x6 + MAC x16, 브로드캐스트로
+  python3 - "$1" "$BROADCAST" <<'PY'
 import socket, sys
 mac = bytes.fromhex(sys.argv[1].replace(":", ""))
-packet = b"\xff" * 6 + mac * 16          # 매직 패킷: FF x6 + MAC x16
+packet = b"\xff" * 6 + mac * 16
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 for addr in (sys.argv[2], "255.255.255.255"):
     for port in (9, 7):
         s.sendto(packet, (addr, port))
 PY
-  echo -n "[$(ts)] 부팅 대기"
-  for _ in $(seq 60); do pve_up && break; echo -n "."; sleep 5; done; echo
-  if ! pve_up; then
-    echo "[$(ts)] ❌ 5분 안에 Proxmox가 응답하지 않음. BIOS의 Wake-on-LAN 설정이나 전원 상태를 확인하세요."
-    exit 1
-  fi
-  echo "[$(ts)] Proxmox 응답함"
-fi
+}
 
-# 2) VM 시작 (컨트롤 플레인 먼저)
-for id in "$CP_VMID" "${WORKER_VMIDS[@]}"; do
-  status=$(pve "qm status $id" 2>/dev/null | awk '{print $2}')
-  if [[ "$status" == "running" ]]; then
-    echo "[$(ts)] VM $id 이미 실행 중"
+host_up() {
+  host_info "$1"
+  if host_ssh true 2>/dev/null; then
+    log "이미 켜져 있음"
   else
-    pve "qm start $id" >/dev/null 2>&1 && echo "[$(ts)] VM $id 시작" || echo "[$(ts)] ⚠️ VM $id 시작 실패"
+    log "Wake-on-LAN 전송 (${H_MAC}), 부팅 대기 (최대 5분)"
+    wake "$H_MAC"
+    for _ in $(seq 60); do host_ssh true 2>/dev/null && break; sleep 5; done
+    if ! host_ssh true 2>/dev/null; then
+      log "❌ 5분 안에 응답 없음. 전원(멀티탭)·랜선·Wake-on-LAN 설정 확인"
+      log "   (전원이 완전히 끊겼다 들어온 뒤엔 Wake-on-LAN이 안 먹는 보드가 많다 → 전원 버튼)"
+      return 1
+    fi
+    log "응답함"
   fi
+
+  # bank-* VM 중 꺼진 것을 한꺼번에 시작. 컨트롤 플레인을 먼저 기다릴 필요는 없다:
+  # 워커(k3s agent)는 서버가 뜰 때까지 알아서 재접속한다
+  local ids
+  ids=$(host_ssh "qm list" 2>/dev/null | awk '$2 ~ /^bank-/ && $3 == "stopped" {print $1}' | tr '\n' ' ')
+  if [ -z "${ids// /}" ]; then
+    log "시작할 VM 없음"
+    return 0
+  fi
+  if host_ssh "for id in $ids; do qm start \$id & done; wait" >/dev/null 2>&1; then
+    log "VM 시작: $ids"
+  else
+    log "⚠️ VM 시작 중 실패 있음: $ids"
+  fi
+}
+
+wait_k8s() {   # 컨트롤 플레인이 있는 proxmox가 켜졌을 때만
+  H_NAME=k8s
+  log "노드 Ready 대기 (최대 5분)"
+  local nodes ready total
+  for _ in $(seq 60); do
+    nodes=$(kubectl get nodes --no-headers --request-timeout=3s 2>/dev/null)
+    total=$(echo "$nodes" | grep -c . )
+    ready=$(echo "$nodes" | awk '$2=="Ready"' | grep -c . )
+    [ "$total" -gt 0 ] && [ "$ready" = "$total" ] && break
+    sleep 5
+  done
+  if [ "${total:-0}" -eq 0 ]; then log "❌ kube-apiserver에 접속 못 함"; return 1; fi
+  echo "$nodes" | awk '{printf "    %-8s %s\n", $1, $2}'
+  if [ "$ready" = "$total" ]; then
+    log "✅ 노드 Ready ${ready}/${total}"
+  else
+    log "⚠️ 노드 Ready ${ready}/${total} (꺼진 호스트에 있는 노드는 NotReady가 정상)"
+  fi
+}
+
+# 호스트마다 백그라운드로 동시에
+pids=""
+for t in $targets; do
+  host_up "$t" &
+  pids="$pids $t:$!"
 done
 
-# 3) k8s 노드 Ready 대기
-total=$(( 1 + ${#WORKER_VMIDS[@]} ))
-echo -n "[$(ts)] k8s 노드 Ready 대기"
-for _ in $(seq 60); do
-  ready=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready"' | wc -l | tr -d ' ')
-  [[ "$ready" == "$total" ]] && break
-  echo -n "."; sleep 5
-done; echo
+# proxmox(컨트롤 플레인)가 끝나면 나머지를 기다리지 않고 바로 k8s 확인
+# (proxmox2가 응답 없음으로 5분을 다 쓰는 동안 k8s 확인이 늦어지지 않게)
+fail=0
+for p in $pids; do
+  if [ "${p%%:*}" = proxmox ]; then
+    if wait "${p#*:}"; then wait_k8s || fail=1; else fail=1; fi
+  fi
+done
+for p in $pids; do
+  [ "${p%%:*}" = proxmox ] && continue
+  wait "${p#*:}" || fail=1
+done
 
-kubectl get nodes 2>/dev/null || { echo "[$(ts)] ❌ kube-apiserver에 접속 못 함"; exit 1; }
 echo
-echo "[$(ts)] ✅ 클러스터 준비 완료 (Ready ${ready}/${total})"
-echo "  Argo CD : http://argocd.172.30.1.240.nip.io"
-echo "  hello   : http://hello.172.30.1.240.nip.io"
+if [ $fail -eq 0 ]; then echo "[$(ts)] ✅ 완료 ($targets)"; else echo "[$(ts)] ⚠️ 일부 실패 (위 ❌ 확인)"; fi
+case " $targets " in *" proxmox "*)
+  echo "  Argo CD : $ARGOCD_URL"
+  echo "  Grafana : $GRAFANA_URL" ;;
+esac
+exit $fail

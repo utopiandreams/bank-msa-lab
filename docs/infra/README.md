@@ -168,15 +168,21 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 
 | 동작 | 스크립트 | Raycast |
 | --- | --- | --- |
-| 켜기: Wake-on-LAN → VM 230→231~233 시작 → 노드 Ready 대기 | `infra/scripts/cluster-up.sh` | Bank Lab Up 🟢 |
-| 끄기: 워커 → 컨트롤 플레인 정상 종료 → 호스트 `poweroff` | `infra/scripts/cluster-down.sh` | Bank Lab Down 🔴 (확인 창 있음) |
+| 켜기: 호스트별 Wake-on-LAN → 그 호스트의 `bank-*` VM 한꺼번에 시작 → 노드 Ready 대기 | `infra/scripts/cluster-up.sh [all\|proxmox\|proxmox2]` | Bank Lab Up 🟢 (대상 드롭다운) |
+| 끄기: 호스트별 워커 → 컨트롤 플레인 정상 종료 → 호스트 `poweroff` | `infra/scripts/cluster-down.sh [all\|proxmox\|proxmox2]` | Bank Lab Down 🔴 (대상 드롭다운, 확인 창 있음) |
 | 상태: 물리 장비 3대(proxmox·proxmox2·노트북 전원/배터리) / VM / 노드·메모리 / Argo CD 앱 | `infra/scripts/cluster-status.sh` | Bank Lab Status 📊 |
 | Argo CD 화면 열기 (Chrome) | `infra/scripts/raycast/bank-argocd.sh` | Bank Argo CD 🐙 |
 | Grafana 화면 열기 (Chrome) + admin 비밀번호 클립보드 복사 | `infra/scripts/raycast/bank-grafana.sh` | Bank Grafana 📈 |
 
 - Raycast 등록: Raycast 설정 → Extensions → Script Commands → Add Directories → `infra/scripts/raycast` 선택
 - 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
-- proxmox2와 노트북은 **상태만** 본다 (2026-11-18). proxmox2는 VM이 생기는 노드 확장 때 up/down에 넣고(WOL MAC은 `lab.env`에 있음), 노트북은 항상 켜 두는 중재자라 up/down 대상이 아니다. 노트북 전원선이 빠지면 상태에 ⚠️ 배터리 동작으로 표시된다.
+- **호스트 단위 제어 + 병렬 (2026-11-18 변경):** 대상은 `all`(기본) / `proxmox` / `proxmox2`. 호스트마다 백그라운드로 동시에 진행하고, 출력 줄 앞에 `[호스트]`가 붙는다. 한 대가 안 켜져도 나머지는 계속 간다.
+  - 켜기: VM은 컨트롤 플레인을 기다리지 않고 한꺼번에 시작한다 (k3s agent가 서버에 알아서 재접속). k8s Ready 확인은 컨트롤 플레인이 있는 proxmox가 끝나는 즉시 한다 (proxmox2의 5분 대기에 묶이지 않게).
+  - 끄기: 호스트 안에서는 워커들 동시에 → 컨트롤 플레인 순서 유지. 호스트끼리는 동시.
+  - VM은 이름이 `bank-`로 시작하는 것만 다룬다 (호스트에 다른 VM이 있어도 안 건드림). proxmox2에 VM이 생기면 스크립트 수정 없이 같이 켜지고 꺼진다.
+  - 노트북은 항상 켜 두는 중재자라 up/down 대상이 아니고 상태만 본다. 전원선이 빠지면 상태에 ⚠️ 배터리 동작으로 표시된다.
+  - HA(서버 3대) 뒤에는 "하나만 끄기" 전에 etcd 과반수가 남는지 따져야 한다 (`cluster-down.sh` 머리 주석).
+  - Raycast는 PATH가 짧아 macOS 기본 `/bin/bash` 3.2로 돌 수 있다 → 연관 배열·`wait -n` 없이 작성.
 - Wake-on-LAN: Proxmox `enp5s0` (MAC `22:02:4d:07:2d:06`) 지원 모드 `pumbg`. 기본값이 `d`(꺼짐)라 `infra/bootstrap/enable-wol.sh`로 `wol g`를 켜고, systemd 서비스 `wol-enp5s0`로 부팅마다 다시 켜지게 했다.
   - 매직 패킷은 브로드캐스트라 **맥북이 집 네트워크에 있어야** 한다.
   - 2026-11-11 실제 테스트: Bank Lab Down으로 종료 → Bank Lab Up으로 원격 부팅 성공. **BIOS 설정 변경 없이 동작했다.** 재부팅 후 노드 4대 Ready, Argo CD 앱 4개 Synced/Healthy, hello v2 응답까지 자동으로 복구됐다.
