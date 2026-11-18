@@ -1,0 +1,16 @@
+# 모든 CloudNativePG 인스턴스(core-db·transfer-db·notification-db)의 지표 수집.
+# Cluster의 spec.monitoring.enablePodMonitor는 CNPG 1.30 CRD에서 deprecated("PodMonitor를 직접 만들라") → 하나로 직접 선언한다.
+# 각 Postgres 파드 안의 CNPG 인스턴스 매니저가 포트 9187(metrics)에서 지표를 내놓는다 (연결 수, 트랜잭션, 복제 지연, WAL 등)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cnpg-clusters
+spec:
+  selector:
+    matchExpressions:
+      - key: cnpg.io/cluster   # 어느 DB 클러스터든
+        operator: Exists
+    matchLabels:
+      cnpg.io/podRole: instance   # Postgres 인스턴스 파드만 (initdb·join Job 파드 제외)
+  podMetricsEndpoints:
+    - port: metrics

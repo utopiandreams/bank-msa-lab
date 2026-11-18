@@ -1,0 +1,25 @@
+# Grafana 대시보드 (deploy/grafana, kustomize로 JSON → ConfigMap). Grafana가 떠 있으면 사이드카가 바로 올린다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/grafana
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # CNPG 대시보드 JSON이 약 250KB라 client-side apply의 annotation 크기 제한(256KB)에 아슬아슬하다
+      - ServerSideApply=true

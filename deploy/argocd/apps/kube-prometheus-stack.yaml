@@ -1,0 +1,122 @@
+# 관측성 기본 스택: Prometheus(수집·저장) + Grafana(대시보드) + node-exporter(노드) + kube-state-metrics(k8s 객체 상태)
+# + prometheus-operator(ServiceMonitor·PodMonitor 선언을 보고 수집 대상을 자동 등록).
+# 2026-11-18 결정: 10주 차에서 기본 스택만 앞당김. 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고.
+# Loki·Tempo·Alertmanager·SLO는 원래 주차(10~11주 차)에. 결정 이유와 메모리 예산은 docs/infra/README.md "관측성".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"   # CRD(ServiceMonitor·PodMonitor)를 만드는 쪽이라 오퍼레이터들과 같이 먼저
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 93.4.0   # prometheus-operator v0.95.2
+    helm:
+      releaseName: kps
+      valuesObject:
+        fullnameOverride: kps   # 리소스 이름을 kps-prometheus, kps-operator처럼 짧게
+
+        # ── k3s에 맞추기 ──────────────────────────────────────────────
+        # k3s는 controller-manager·scheduler·kube-proxy·etcd를 파드가 아니라 k3s 프로세스 하나에 넣어 돌린다.
+        # 기본값(파드를 찾아 수집)으로 두면 수집 대상이 영원히 Down이고 알림 규칙도 계속 울린다 → 끈다.
+        # etcd는 노드 확장(내장 etcd 전환) 뒤 k3s --etcd-expose-metrics + endpoints 지정으로 다시 켠다.
+        kubeControllerManager: { enabled: false }
+        kubeScheduler: { enabled: false }
+        kubeProxy: { enabled: false }
+        kubeEtcd: { enabled: false }
+
+        # ── 알림은 11주 차 ───────────────────────────────────────────
+        # 규칙(defaultRules)은 그대로 평가된다 → Prometheus UI의 Alerts 탭에서 볼 수는 있다. 보낼 곳만 없다
+        alertmanager: { enabled: false }
+
+        prometheusOperator:
+          # 웹훅은 PrometheusRule 문법을 미리 검사해 주는 기능. Helm 훅 Job과 인증서 Secret이 따라오는데,
+          # Argo CD에서 훅이 매 동기화마다 다시 돌거나 OutOfSync로 남는 일이 잦다. 얻는 것에 비해 번거로워 끈다
+          admissionWebhooks: { enabled: false }
+          tls: { enabled: false }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+
+        prometheus:
+          prometheusSpec:
+            # 기본값 true면 이 Helm 릴리스 라벨이 붙은 ServiceMonitor·PodMonitor만 수집한다.
+            # 서비스 차트·Kafka·DB가 각자 선언한 모니터를 라벨 없이 전부 줍도록 false
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+
+            # 15초 (기본 30초). k6 실험은 몇 분짜리라 30초면 그래프에 점이 몇 개 안 찍힌다.
+            # rate()는 구간 안에 점이 2개 이상 있어야 하므로 대시보드에서는 rate(...[1m]) 이상을 쓴다
+            scrapeInterval: 15s
+            evaluationInterval: 15s
+
+            # 디스크: 기간과 크기 중 먼저 닿는 쪽에서 오래된 블록부터 지운다. PVC(10Gi)보다 작게 잡아 디스크 풀을 막는다
+            retention: 7d
+            retentionSize: 8GB
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 10Gi   # StorageClass 기본값(local-path). 노드에 묶인다 → 노드가 죽으면 그동안 지표는 못 본다
+
+            # 메모리는 활성 시계열 수에 거의 비례한다 (시계열 1개 ≈ 수 KB). 지금 규모는 수만 개 수준이라 1Gi 안쪽.
+            # 서비스·파드가 늘면 Grafana의 "Prometheus / Overview"에서 head series를 보고 조정한다
+            resources:
+              requests: { cpu: 200m, memory: 768Mi }
+              limits: { memory: 1536Mi }   # CPU limit은 걸지 않는다 (압축·쿼리 때 몰아 쓴다, pitfalls 16과 같은 이유)
+
+        grafana:
+          # 관리자 계정은 Git에 두지 않고 클러스터에서 한 번 만든다 (docs/infra/README.md "Grafana 관리자 계정").
+          # 비워 두면 차트가 무작위 비밀번호를 만드는데, Argo CD는 동기화할 때마다 템플릿을 다시 그려서
+          # 비밀번호가 계속 바뀐다 (OutOfSync 루프). 그래서 미리 만든 Secret을 쓴다
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+
+          # 대시보드는 deploy/grafana/에 JSON으로 두고 ConfigMap(라벨 grafana_dashboard=1)으로 넣는다.
+          # 사이드카가 모든 네임스페이스의 그 라벨 ConfigMap을 찾아 Grafana에 올린다 (차트 기본값)
+          # → 화면에서 고친 대시보드는 재시작하면 사라진다. 남길 것은 JSON으로 내보내 커밋한다
+          persistence: { enabled: false }
+          defaultDashboardsTimezone: browser
+          testFramework: { enabled: false }   # `helm test`용 파드. Argo CD는 helm test를 돌리지 않는다
+
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            hosts:
+              - grafana.172.30.1.240.nip.io
+
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { memory: 384Mi }
+
+        kube-state-metrics:
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 128Mi }
+
+        prometheus-node-exporter:
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # prometheus-operator의 CRD(Prometheus, PrometheusRule 등)도 커서 annotation 크기 제한(256KB)에 걸린다 (CNPG·Strimzi와 같은 이유)
+      - ServerSideApply=true

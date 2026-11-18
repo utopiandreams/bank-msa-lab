@@ -1,0 +1,28 @@
+# Kafka 브로커·Kafka Exporter 파드의 지표를 수집 대상으로 등록한다 (Strimzi 1.3.1 공식 예제 kafka-resources-metrics.yaml 기반).
+# prometheus-operator가 이 선언을 Prometheus 수집 설정으로 바꿔 준다 → 파드가 늘거나 바뀌어도 손댈 것이 없다.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-resources-metrics
+spec:
+  selector:
+    matchExpressions:
+      - key: strimzi.io/kind
+        operator: In
+        values: ["Kafka"]   # 브로커(dual-role)와 Kafka Exporter 파드 모두 이 라벨을 단다
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+      # Strimzi 대시보드가 기대하는 라벨 이름으로 맞춘다 (strimzi.io/cluster → strimzi_io_cluster 등)
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node_name
+        - sourceLabels: [__meta_kubernetes_pod_host_ip]
+          targetLabel: node_ip

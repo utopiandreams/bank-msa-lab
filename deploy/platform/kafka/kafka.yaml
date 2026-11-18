@@ -58,5 +58,20 @@ spec:
       min.insync.replicas: 1
       # 토픽은 KafkaTopic 선언으로만 만든다 (오타난 토픽 이름으로 보내면 자동 생성 대신 에러가 나야 한다, GitOps)
       auto.create.topics.enable: false
+    # 브로커 지표를 Prometheus 형식으로 노출한다 (포트 tcp-prometheus 9404 → deploy/platform/monitoring의 PodMonitor가 수집).
+    # JMX Exporter(정규식 규칙이 담긴 큰 ConfigMap)와 달리 Strimzi 자체 플러그인이라 설정이 한 줄이다. 공식 예제도 이쪽이 기본
+    metricsConfig:
+      type: strimziMetricsReporter
+  # 컨슈머 그룹 랙(= 쌓였는데 아직 안 읽은 메시지 수)을 지표로 만드는 별도 파드.
+  # 브로커 지표에는 랙이 없다 → 4주 차 notification, 16주 차 랙·핫 파티션 실험의 핵심 숫자
+  kafkaExporter:
+    topicRegex: ".*"
+    groupRegex: ".*"
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
   entityOperator:
     topicOperator: {}   # KafkaTopic → 실제 토픽. 사용자 인증을 안 쓰니 userOperator는 두지 않는다

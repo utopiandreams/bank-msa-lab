@@ -1,0 +1,31 @@
+# 플랫폼 구성 요소(Kafka, Postgres)의 수집 대상 선언 (PodMonitor). 서비스는 공통 차트가 각자 PodMonitor를 만든다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-targets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # kube-prometheus-stack(PodMonitor CRD) 다음
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/platform/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank   # PodMonitor는 대상 파드와 같은 네임스페이스에 둔다 (namespaceSelector 생략 = 자기 네임스페이스)
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true   # CRD가 아직 없을 때 dry-run에서 막히지 않게
+    # sync-wave는 CRD가 "준비될 때까지" 기다려 주지 않는다 (metallb-config·kafka와 같은 이유)
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
