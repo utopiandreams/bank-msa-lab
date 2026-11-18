@@ -3,6 +3,7 @@
 //   ./load-test/seed-accounts.sh          # 먼저 계좌 준비 (load-test/data/accounts.json)
 //   k6 run load-test/transfer-baseline.js
 //   SMOKE=1 k6 run load-test/transfer-baseline.js   # 20초짜리 동작 확인
+//   PROFILE=stress k6 run load-test/transfer-baseline.js   # 꺾이는 지점 찾기: 100 → 200 → 400 → 800건/초
 //
 // 목적: 절대 처리량이 아니라 "평소 모양"과 "어디서 꺾이고 그때 무엇이 막히나" (docs/experiments/week-05-baseline.md)
 //
@@ -18,15 +19,20 @@ import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 
 const BASE = __ENV.GATEWAY_URL || 'http://gateway.172.30.1.240.nip.io';
-const SMOKE = __ENV.SMOKE === '1';
+const PROFILE = __ENV.SMOKE === '1' ? 'smoke' : (__ENV.PROFILE || 'baseline');
 const accounts = JSON.parse(open('./data/accounts.json'));
 
 const statusCount = new Counter('transfer_status');   // 응답 본문의 송금 상태별 건수 (COMPLETED / FAILED / UNKNOWN)
 
 // 단계: [이름, 초당 건수, 유지 시간(초)]. 단계 사이 10초는 속도를 올리는 구간
-const STAGES = SMOKE
-  ? [['smoke', 5, 20]]
-  : [['warmup', 5, 60], ['10rps', 10, 120], ['30rps', 30, 120], ['60rps', 60, 120]];
+const PROFILES = {
+  smoke: [['smoke', 5, 20]],
+  baseline: [['warmup', 5, 60], ['10rps', 10, 120], ['30rps', 30, 120], ['60rps', 60, 120]],
+  // 꺾이는 지점(하키 스틱)과 그때 무엇이 먼저 막히는지 찾기. 약 9분 30초 (토큰 수명 15분 안)
+  stress: [['warmup', 20, 60], ['100rps', 100, 120], ['200rps', 200, 120], ['400rps', 400, 120], ['800rps', 800, 120]],
+};
+const STAGES = PROFILES[PROFILE];
+if (!STAGES) throw new Error(`알 수 없는 PROFILE: ${PROFILE}`);
 const RAMP = 10;
 
 function buildStages() {
@@ -61,8 +67,10 @@ export const options = {
       executor: 'ramping-arrival-rate',
       startRate: 0,
       timeUnit: '1s',
-      preAllocatedVUs: 50,
-      maxVUs: 300,   // 응답이 느려지면 동시에 기다리는 요청이 늘어난다. 모자라면 k6가 "VU 부족" 경고 → 그 자체가 신호
+      preAllocatedVUs: PROFILE === 'stress' ? 200 : 50,
+      // 동시에 기다리는 요청 수 = 초당 건수 × 응답 시간. 800건/초에서 응답이 1초로 늘면 800개가 필요하다.
+      // 모자라면 k6가 요청을 못 보내고 "dropped_iterations"가 생긴다 → 그 자체가 시스템이 밀렸다는 신호
+      maxVUs: PROFILE === 'stress' ? 1500 : 300,   // 응답이 느려지면 동시에 기다리는 요청이 늘어난다. 모자라면 k6가 "VU 부족" 경고 → 그 자체가 신호
       stages: buildStages(),
     },
   },
