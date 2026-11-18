@@ -27,12 +27,19 @@ env: {}
 # Secret에서 꺼내는 환경변수 (이름: {secret: <Secret 이름>, key: <키>}). 비밀번호는 values에 직접 쓰지 않는다
 secretEnv: {}
 
+# 2026-11-18 라이트사이징 (k6 실측, docs/experiments/week-05-k6-baseline.md)
+# - CPU request: transfer 60건/초에서 0.025코어 → 100m 그대로. limit은 걸지 않는다 (아래)
+# - 메모리 request = limit = 512Mi (이전: request 384Mi / limit 512Mi, 2주 차에 측정 없이 정한 값).
+#   실측: 평소 부하에서 core 361Mi · notification 349Mi · transfer 385Mi로 request 384Mi를 이미 다 쓰거나 넘김.
+#   메모리는 빌려 쓸 수 없는 자원이라 request < limit(빌려 쓰는 구조)이면 노드가 빡빡할 때 먼저 쫓겨난다.
+#   transfer 200건/초 피크 433Mi 기준으로 "파드 하나는 200건/초까지". 그 이상은 메모리로 받지 않고
+#   거절(스레드 상한, 15주 차)·스케일 아웃(16주 차)으로 받는다
 resources:
   requests:
     cpu: 100m
-    memory: 384Mi
+    memory: 512Mi
   limits:
-    # 메모리 limit만 건다. 넘으면 OOMKilled. 힙은 이미지의 MaxRAMPercentage=75로 이 값의 75%.
+    # 메모리만 건다. 넘으면 OOMKilled. 힙은 이미지의 MaxRAMPercentage=75로 이 값의 75%.
     memory: 512Mi
     # CPU limit은 일부러 걸지 않는다. JVM은 기동할 때 CPU를 몰아 쓰는데, limit이 있으면
     # 스로틀링으로 기동이 몇 배 느려지고 startupProbe에 걸려 재시작 루프에 빠지기 쉽다.
