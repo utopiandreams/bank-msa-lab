@@ -143,7 +143,9 @@
   - 2026-11-19 결정: 고객 응답은 **이번엔 동기**, 비동기·혼합(N초 대기 후 "처리 중")은 8주 차 해소 스케줄러와 함께 보강. 15주 차 외부 지연 실험의 "전" 상태
   - [x] S-1: `bank-mock` 서비스 (송금 API, 같은 키 멱등, 수취 계좌 규칙 거절 + 거절률 설정값) + 배포. 거절도 200(판정 확실), 저장은 메모리. 클러스터 확인 (2026-11-19)
   - [x] S-2: core 미정산 계정(Flyway V3) + 타행 출금 / 출금 취소(역분개) API (2026-11-19). 취소는 원래 출금을 가리키고 금액·계좌는 원래 전표에서, `reverses_entry_id` UNIQUE로 한 번만(자연 키, 개발자 결정). 테스트 11개 추가
-  - [ ] S-3: transfer 타행 사가 (`toBankCode`, Flyway: 송금 종류·은행 코드·새 상태, bank-mock 어댑터 + 타임아웃, 보상, CANCELLED 이벤트)
+  - [ ] S-3: transfer 타행 사가. **2026-11-19 분담: 사가 로직은 개발자가 직접 구현** (핵심 로직)
+    - [x] 배관 (Claude): Flyway V4 "공통 + 상세"(`transfer`에 kind·to_account_id NULL 허용·사가 상태, `interbank_transfer` 상세 테이블. 고객 멱등 키 UNIQUE가 공통 테이블에 있어 당행·타행 통틀어 유지), `CoreInterbankPort`·`ExternalBankPort` + 어댑터(외부 409·5xx·타임아웃은 Unknown = 보상 금지, 취소에는 Rejected 없음), notification CANCELLED 알림 + 이벤트 계약 넓힘(소비자 먼저, pitfalls 18)
+    - [ ] 개발자: 타행 도메인 클래스(당행과 분리), 상태 전이(WITHDRAWN·INTERBANK_REQUESTED·COMPENSATING·CANCELLED, isFinal에 CANCELLED), 사가 지휘 유스케이스, `toBankCode` API, 영속성 매핑(interbank_transfer), 이벤트 발행 연결, 테스트(성공 / 외부 거절 → 보상 / 출금 거절 → FAILED / 결과 불명이면 보상 안 함 / 보상 실패면 COMPENSATING 유지 / CANCELLED 이벤트 한 번). 진행 중 상태 재요청은 당행 PROCESSING처럼 200 + 현재 상태
   - [ ] S-4: 클러스터 확인 (성공 / 거절 → 보상 → 잔액·미정산 0), 코레오그래피 비교 그림
 - [ ] 6주: 커밋과 발행 사이 장애로 이벤트 유실 재현 → Outbox로 해결, 커밋 직전 컨슈머 종료로 중복 수신 재현 → 멱등 컨슈머로 해결
 - [ ] 7주: 동시 출금으로 잔액 깨짐 재현, 낙관적 락·비관적 락·Redis 분산 락을 k6로 비교
