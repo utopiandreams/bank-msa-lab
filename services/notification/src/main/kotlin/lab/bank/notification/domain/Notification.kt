@@ -65,6 +65,9 @@ class Notification(
             val type = when (event.status) {
                 TransferFinishedEvent.COMPLETED -> NotificationType.TRANSFER_COMPLETED
                 TransferFinishedEvent.FAILED -> NotificationType.TRANSFER_FAILED
+                // 생산자(transfer)보다 먼저 배포해야 하는 줄: 모르는 상태는 아래 else에서 예외 → 깨진 메시지로 건너뛰어
+                // 고객이 "돌려드렸습니다" 알림을 영영 못 받는다 (pitfalls 18: 소비자 먼저)
+                TransferFinishedEvent.CANCELLED -> NotificationType.TRANSFER_CANCELLED
                 else -> throw IllegalArgumentException("알 수 없는 송금 상태: ${event.status}")
             }
             return Notification(
@@ -83,6 +86,7 @@ class Notification(
             return when (type) {
                 NotificationType.TRANSFER_COMPLETED -> "${amount} 송금이 완료되었습니다."
                 NotificationType.TRANSFER_FAILED -> "${amount} 송금에 실패했습니다. (${reason(event.failureCode)})"
+                NotificationType.TRANSFER_CANCELLED -> "${amount} 타행 송금이 처리되지 않아 출금한 금액을 돌려드렸습니다. (${reason(event.failureCode)})"
             }
         }
 
