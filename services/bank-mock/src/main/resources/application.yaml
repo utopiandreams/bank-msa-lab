@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: bank-mock
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+management:
+  # actuator는 별도 포트로 분리한다. 같은 포트(8080)면 gateway Ingress를 통해 /actuator/prometheus가 인터넷에 열린다
+  # (지표에는 경로·에러율·버전·내부 구조가 다 보인다). 8081은 Service·Ingress에 없고 Prometheus만 파드로 직접 긁는다.
+  # 포트 값은 공통 차트가 MANAGEMENT_SERVER_PORT로 덮어쓴다 (deploy/helm/spring-service, 차트가 기준)
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        # 프로브는 관리 포트가 아니라 앱 포트(8080)의 /livez·/readyz로 받는다. 관리 포트로 받으면
+        # 앱 포트(Tomcat·Netty)가 고장 나 요청을 못 받는데도 Ready로 보여 트래픽이 계속 들어온다
+        add-additional-paths: true
+  metrics:
+    tags:
+      application: ${spring.application.name}   # 모든 지표에 서비스 이름 라벨 (JVM 대시보드가 이 라벨로 고른다)
+    distribution:
+      # API 지연 히스토그램(버킷)을 내보낸다. 이게 있어야 Prometheus에서 p99를 계산할 수 있다 (histogram_quantile).
+      # 앱 안에서 백분위를 미리 계산하는 방식(percentiles)은 파드 여러 개를 합칠 수 없어서 쓰지 않는다
+      percentiles-histogram:
+        http.server.requests: true
+
+# 외부 은행의 행동 (BankMockProperties). 클러스터에서는 환경변수 BANK_MOCK_REJECT_RATE_PERCENT 등으로 바꾼다
+bank-mock:
+  reject-account-prefix: "999"   # 받는 계좌가 이걸로 시작하면 "계좌 없음" 거절
+  reject-rate-percent: 0         # 그 밖의 요청을 이 확률로 거절 (실험 스위치)
+
+server:
+  shutdown: graceful
+  tomcat:
+    # Tomcat 스레드 지표(tomcat.threads.busy·current·config.max)를 내보내려면 MBean 등록이 필요하다 (Boot 기본값 꺼짐).
+    # 부하를 올릴 때 "바쁜 스레드가 최대치에 붙었나" = 요청이 앱에 들어오기 전에 줄 서기 시작했나를 보는 숫자
+    mbeanregistry:
+      enabled: true
+    threads:
+      max: 200   # 기본값과 같지만 명시 (pitfalls 13 보이지 않는 기본값). 이 선에 붙으면 대기열이 생긴다
