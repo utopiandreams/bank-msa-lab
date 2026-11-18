@@ -170,10 +170,13 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 | --- | --- | --- |
 | 켜기: Wake-on-LAN → VM 230→231~233 시작 → 노드 Ready 대기 | `infra/scripts/cluster-up.sh` | Bank Lab Up 🟢 |
 | 끄기: 워커 → 컨트롤 플레인 정상 종료 → 호스트 `poweroff` | `infra/scripts/cluster-down.sh` | Bank Lab Down 🔴 (확인 창 있음) |
-| 상태: 호스트 / VM / 노드 / Argo CD 앱 | `infra/scripts/cluster-status.sh` | Bank Lab Status 📊 |
+| 상태: 물리 장비 3대(proxmox·proxmox2·노트북 전원/배터리) / VM / 노드·메모리 / Argo CD 앱 | `infra/scripts/cluster-status.sh` | Bank Lab Status 📊 |
+| Argo CD 화면 열기 (Chrome) | `infra/scripts/raycast/bank-argocd.sh` | Bank Argo CD 🐙 |
+| Grafana 화면 열기 (Chrome) + admin 비밀번호 클립보드 복사 | `infra/scripts/raycast/bank-grafana.sh` | Bank Grafana 📈 |
 
 - Raycast 등록: Raycast 설정 → Extensions → Script Commands → Add Directories → `infra/scripts/raycast` 선택
 - 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
+- proxmox2와 노트북은 **상태만** 본다 (2026-11-18). proxmox2는 VM이 생기는 노드 확장 때 up/down에 넣고(WOL MAC은 `lab.env`에 있음), 노트북은 항상 켜 두는 중재자라 up/down 대상이 아니다. 노트북 전원선이 빠지면 상태에 ⚠️ 배터리 동작으로 표시된다.
 - Wake-on-LAN: Proxmox `enp5s0` (MAC `22:02:4d:07:2d:06`) 지원 모드 `pumbg`. 기본값이 `d`(꺼짐)라 `infra/bootstrap/enable-wol.sh`로 `wol g`를 켜고, systemd 서비스 `wol-enp5s0`로 부팅마다 다시 켜지게 했다.
   - 매직 패킷은 브로드캐스트라 **맥북이 집 네트워크에 있어야** 한다.
   - 2026-11-11 실제 테스트: Bank Lab Down으로 종료 → Bank Lab Up으로 원격 부팅 성공. **BIOS 설정 변경 없이 동작했다.** 재부팅 후 노드 4대 Ready, Argo CD 앱 4개 Synced/Healthy, hello v2 응답까지 자동으로 복구됐다.
