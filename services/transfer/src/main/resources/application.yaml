@@ -62,3 +62,10 @@ management:
 
 server:
   shutdown: graceful
+  tomcat:
+    # Tomcat 스레드 지표(tomcat.threads.busy·current·config.max)를 내보내려면 MBean 등록이 필요하다 (Boot 기본값 꺼짐).
+    # 부하를 올릴 때 "바쁜 스레드가 최대치에 붙었나" = 요청이 앱에 들어오기 전에 줄 서기 시작했나를 보는 숫자
+    mbeanregistry:
+      enabled: true
+    threads:
+      max: 200   # 기본값과 같지만 명시 (pitfalls 13 보이지 않는 기본값). 이 선에 붙으면 대기열이 생긴다
