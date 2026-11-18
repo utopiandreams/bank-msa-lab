@@ -15,6 +15,12 @@ data class CoreTransferRequest(
     val amount: Long,
 )
 
+// POST /postings/interbank-withdrawals 요청 body (ADR-0004). 취소는 body 없음
+data class CoreInterbankWithdrawalRequest(
+    val accountId: UUID,
+    val amount: Long,
+)
+
 // 2xx 응답 body. 처음 처리 201, 같은 키 재요청 200 + replayed=true
 data class CorePostingResponse(
     val entryId: UUID,

@@ -33,6 +33,12 @@ core:
   connect-timeout: 1s       # 클러스터 내부라 연결은 ms 단위. 1초 넘으면 core가 없거나 네트워크 문제
   read-timeout: 3s          # 임시값 (T-1 질문 5번). core 송금은 로컬 트랜잭션 하나라 평소 수십 ms. 10주 차 p99 지표로 근거 있게 조정
 
+# 외부 결제망 호출 (infrastructure/bankmock, ADR-0004). 지금은 bank-mock이 대표한다
+bank-mock:
+  base-url: http://bank-mock   # 클러스터 내부 Service. 로컬은 환경변수 BANK_MOCK_BASE_URL
+  connect-timeout: 1s
+  read-timeout: 3s             # 임시값. 넘으면 외부가 처리했는지 모름 → 보상하지 않고 INTERBANK_REQUESTED에 남는다. 15주 차 지연 실험에서 조정
+
 # 쿠버네티스(프로브)·Prometheus(지표)가 기대는 설정. 기본값과 같은 것도 버전업으로 바뀌지 않게 명시한다
 management:
   # actuator는 별도 포트로 분리한다. 같은 포트(8080)면 gateway Ingress를 통해 /actuator/prometheus가 인터넷에 열린다

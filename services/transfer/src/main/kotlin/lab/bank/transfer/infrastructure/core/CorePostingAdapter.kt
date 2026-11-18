@@ -4,6 +4,7 @@ import lab.bank.transfer.application.port.out.CorePostingPort
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.domain.Transfer
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatusCode
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
@@ -18,7 +19,8 @@ import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleC
  */
 @Component
 class CorePostingAdapter(
-    private val coreRestClient: RestClient,
+    // RestClient 빈이 둘(core, bank-mock)이라 이름으로 고른다
+    @Qualifier("coreRestClient") private val coreRestClient: RestClient,
 ) : CorePostingPort {
 
     override fun transfer(transfer: Transfer): CoreTransferResult =
