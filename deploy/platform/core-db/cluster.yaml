@@ -20,10 +20,15 @@ spec:
   storage:
     size: 5Gi          # StorageClass는 기본값(local-path). 노드에 묶인다는 한계는 docs/infra 참고
 
+  # 2026-11-18 라이트사이징: 메모리 request = limit 512Mi (이전 256Mi / 512Mi).
+  # 실측: 기준선(송금 60건/초)에서 DB 메모리 약 100Mi(request의 40%), CPU는 남아돎.
+  # 그래도 512로 잡는 이유: 송금 피크에 조회·배치(8주 차 대사) 같은 다른 부하가 겹칠 수 있고,
+  # DB가 OOMKilled되면 앱보다 훨씬 비싸다 (크래시 복구, 진행 중 트랜잭션 전부 실패).
+  # shared_buffers 128MB + 연결마다 프로세스(연결당 수 MB) + work_mem이 이 안에 들어가야 한다
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       memory: 512Mi
 
