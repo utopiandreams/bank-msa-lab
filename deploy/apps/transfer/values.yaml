@@ -17,3 +17,15 @@ secretEnv:
 # 직접 확인이 필요하면: kubectl -n bank port-forward svc/transfer 8080:80
 ingress:
   enabled: false
+
+# 2026-11-18 라이트사이징 (k6 실측, docs/experiments/week-05-k6-baseline.md)
+# - CPU: 60건/초에서 0.025코어 → 공통값 100m 그대로 (낮추면 JVM 기동 때 몰아 쓰는 CPU를 경합 시 못 받음)
+# - 메모리: 60건/초 피크 385Mi(기존 request 384Mi를 이미 넘김), 200건/초 피크 433Mi.
+#   "파드 하나는 200건/초까지"로 정하고 433Mi + 여유 = 512Mi. request = limit:
+#   메모리는 빌려 쓸 수 없는 자원이라, 빌려 쓰는 구조(request < limit)면 노드가 빡빡할 때 먼저 쫓겨난다.
+#   그 이상의 부하는 메모리로 받지 않고 거절(스레드 상한, 15주 차)·스케일 아웃(16주 차)으로 받는다
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 512Mi
