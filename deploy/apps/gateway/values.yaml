@@ -4,7 +4,7 @@ name: gateway
 image:
   repository: ghcr.io/utopiandreams/gateway
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
-  tag: "0a1eb7dd5438344473f3f93d686ca64f02a889dd"
+  tag: "4d4d428fadd4c173c329f16c09f895ff5f91d64c"
 
 # JWT 서명 비밀키 (ADR-0002). Git에 두지 않고 클러스터에서 한 번 만든다 (docs/infra/README.md "gateway JWT 비밀키")
 secretEnv:
