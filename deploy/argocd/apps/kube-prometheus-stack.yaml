@@ -111,6 +111,13 @@ spec:
           # taint를 지우는 게 아니라 node-exporter에만 "어떤 taint든 견딘다" 출입증을 준다 → 앱은 여전히 못 들어감
           tolerations:
             - operator: Exists
+          prometheus:
+            monitor:
+              # instance 라벨 기본값은 "172.30.1.231:9100"(수집 주소)이라 대시보드에서 어느 노드인지 알아보기 어렵다.
+              # 수집할 때 파드가 떠 있는 노드 이름(bank-w1 등)으로 바꾼다 (relabeling = 저장 전에 라벨 고쳐 쓰기)
+              relabelings:
+                - sourceLabels: [__meta_kubernetes_pod_node_name]
+                  targetLabel: instance
           resources:
             requests: { cpu: 20m, memory: 32Mi }
             limits: { memory: 64Mi }
