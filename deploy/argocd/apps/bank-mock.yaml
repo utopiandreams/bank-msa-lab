@@ -1,0 +1,36 @@
+# bank-mock: 외부 결제망 흉내, 공통 차트 + bank-mock values (ADR-0004)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bank-mock
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/helm/spring-service
+    helm:
+      releaseName: bank-mock
+      valueFiles:
+        - ../../apps/bank-mock/values.yaml   # 차트 경로 기준 상대 경로 (같은 레포 안이면 허용)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank   # 모든 뱅킹 서비스를 한 네임스페이스에 둔다 (12주 차 RBAC의 단위)
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # 차트의 PodMonitor는 kube-prometheus-stack의 CRD가 있어야 한다. 빈 클러스터에서 처음 올릴 때
+      # CRD가 아직 없으면 dry-run에서 막히지 않게 하고, 아래 retry로 CRD가 생길 때까지 다시 시도한다
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
