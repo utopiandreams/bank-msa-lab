@@ -106,6 +106,11 @@ spec:
             limits: { memory: 128Mi }
 
         prometheus-node-exporter:
+          # 노드(OS) 검진 도구라 모든 노드에 하나씩 있어야 한다. 컨트롤 플레인(bank-cp)에는 앱이 못 올라오게
+          # taint CriticalAddonsOnly가 걸려 있어서, 이게 없으면 워커에만 뜨고 두뇌 노드의 메모리·디스크를 못 본다.
+          # taint를 지우는 게 아니라 node-exporter에만 "어떤 taint든 견딘다" 출입증을 준다 → 앱은 여전히 못 들어감
+          tolerations:
+            - operator: Exists
           resources:
             requests: { cpu: 20m, memory: 32Mi }
             limits: { memory: 64Mi }
