@@ -218,6 +218,25 @@
 - 노드 올리면: Grafana Secret 생성 → push → Targets 전부 UP 확인 → 메모리 실측으로 예산 갱신 (`docs/infra/README.md` "관측성 기본 스택" 확인 절차)
 - 그다음 k6 기준선 → 노드 확장 (순서 그대로)
 
+## 2026-11-18 (저녁) · 관측성 스택 적용 + k6 첫 기준선
+
+**한 일**
+- 관측성 스택 클러스터 적용: 수집 대상 17묶음 전부 UP, 대시보드 29개, 지표 외부 차단 확인(밖에서 404). 워커 메모리 +1.4GB(예산과 일치)
+- node-exporter를 컨트롤 플레인에도(toleration), instance 라벨을 노드 이름으로(relabeling)
+- Raycast: Argo CD·Grafana 바로 열기, 상태에 proxmox2·중재자 노트북(전원·배터리)
+- k6 기준선: `load-test/seed-accounts.sh`(계좌 200개, 입금은 port-forward 관리자 통로) + `transfer-baseline.js`(5→10→30→60건/초, 단계별 태그, 잔액 합 검증). 결과 `docs/experiments/week-05-k6-baseline.md`
+
+**결정**
+- 계좌 준비는 시드 스크립트 (gateway에 입금 경로를 열지 않음, ADR-0002 유지). 회원·인증을 먼저 해도 입금 경로 문제는 안 풀림 → 순서 유지
+- 계좌 200개 무작위(경합 없는 평소 모습), 맥북(Wi-Fi)에서 실행
+
+**버그·트러블슈팅**
+- 기준선 중 UNKNOWN 3건: core 낙관적 락 충돌(`@Version`)이 매핑 안 돼 500 → transfer가 결과 불명으로 분류. 돈은 안전(롤백, 잔액 합 불변). 처리 방향은 7주 차 설계로 (pitfalls 22)
+
+**다음**
+- 부하를 수백 건/초로 올려 하키 스틱과 병목 찾기 (그 전에 Tomcat 스레드 지표 켜기)
+- 노드 확장 (proxmox2 전원·랜선 오면)
+
 ---
 
 ## 이력서 소재 (계속 갱신)

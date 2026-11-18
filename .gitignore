@@ -33,3 +33,7 @@ dist/
 *.iml
 .vscode/
 .DS_Store
+
+# k6: 계좌 준비 결과(테스트 사용자·계좌 ID)와 원본 결과 파일. 정리한 수치는 docs/experiments/에
+load-test/data/
+load-test/results/
