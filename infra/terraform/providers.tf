@@ -14,3 +14,17 @@ provider "proxmox" {
     private_key = file(pathexpand(var.ssh_private_key_path))
   }
 }
+
+# 두 번째 호스트 (2026-11-18 노드 확장). 독립 호스트라 API 주소·토큰이 따로다.
+# 토큰은 create-terraform-token.sh를 PVE_HOST=root@172.30.1.201 TFVAR=pve2_api_token 으로 돌려 발급
+provider "proxmox" {
+  alias     = "pve2"
+  endpoint  = var.pve2_endpoint
+  api_token = var.pve2_api_token
+  insecure  = true
+
+  ssh {
+    username    = "root"
+    private_key = file(pathexpand(var.ssh_private_key_path))
+  }
+}

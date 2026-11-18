@@ -111,15 +111,35 @@
 | 231 | bank-w1 | k3s agent | 172.30.1.231 | 6 / 8GB / 50GB |
 | 232 | bank-w2 | k3s agent | 172.30.1.232 | 6 / 8GB / 50GB |
 | 233 | bank-w3 | k3s agent | 172.30.1.233 | 6 / 8GB / 50GB |
+| 234 | bank-w4 | k3s agent (**proxmox2**) | 172.30.1.234 | 10 / 12GB / 80GB |
+| 235 | bank-w5 | k3s agent (**proxmox2**) | 172.30.1.235 | 10 / 12GB / 80GB |
 
-합계 메모리 28GB. 호스트에 약 4GB가 남는다. 메모리는 벌루닝 없이 고정 할당한다.
+- proxmox: 합계 28GB, 호스트에 약 4GB 남음. proxmox2: 합계 24GB, 약 7GB 남음 (그중 약 5GB는 HA 때 두 번째 컨트롤 플레인 자리). 메모리는 벌루닝 없이 고정 할당한다.
+- 모든 노드에 `topology.kubernetes.io/zone=<물리 호스트>` 라벨 (`proxmox` / `proxmox2`). AWS의 가용 영역(AZ) 라벨과 같은 이름이라 `topologySpreadConstraints`·anti-affinity를 그대로 쓸 수 있다 (17주 차 "호스트 통째로 다운")
+
+### 노드 확장 (2026-11-18, proxmox2에 워커 2대)
+
+**VM 구성 결정:** 워커 2대 × (vCPU 10 / 12GB). 3대 이상으로 쪼개지 않은 이유:
+- 호스트 메모리(31GB)가 한계다. VM 개수를 늘려도 합계는 그대로고, VM마다 OS·kubelet·DaemonSet(flannel, node-exporter, svclb)이 0.5~1GB씩 고정으로 먹는다
+- 작은 노드가 여러 개면 합계로는 남는데 한 덩어리로는 없는 **조각화**가 생긴다 (4GB 파드가 3GB씩 남은 노드 어디에도 못 들어감)
+- 같은 호스트 위의 VM은 호스트와 함께 죽는다 → VM을 늘려도 호스트 장애 대비는 안 된다. 2대인 이유는 "노드 하나를 빼도(drain·커널 업데이트·노드 장애 실험) 그 호스트에 워커가 남게"
+- vCPU는 10 × 2 = 호스트 스레드 20. CPU는 VM끼리 나눠 쓰는 자원이라 꽉 채워도 된다
+- **주의:** proxmox2(i5-14600K, 최대 5.3GHz)가 proxmox(E5-2697 v3, 최대 3.6GHz)보다 코어당 훨씬 빠르다. 같은 서비스도 어느 노드에 떴는지에 따라 지연이 다르다 → k6 재측정 때 파드 배치 노드를 같이 기록한다
+
+**Terraform 구조 변경:**
+- 두 호스트는 Proxmox 클러스터가 아니라 API 주소가 따로다 → 프로바이더 2개 (`proxmox`, `proxmox.pve2`). 프로바이더는 `for_each` 안에서 고를 수 없어서, 호스트 하나 분량(이미지·스니펫·VM)을 모듈 `modules/proxmox-host`로 빼고 호스트마다 한 번씩 부른다
+- 노드 표(`main.tf` `locals.nodes`)에 `host`·`extra_labels` 칸. 노드 추가는 이 표에 한 줄
+- 기존 루트 리소스는 `moved` 블록으로 모듈 안으로 주소만 옮겼다
+- **기존 VM이 다시 만들어지지 않게** (pitfalls 25): cloud-init 스니펫은 생성 때만 쓰는 값이라 내용이 바뀌면 VM 교체다. 템플릿에 `extra_labels` 반복문을 넣되 기존 4대는 `[]`로 두고, 옛/새 템플릿 렌더 결과가 같은지 `terraform console`로 확인(`true`). 기존 노드 zone 라벨은 `kubectl label`로
+- plan: **9 moved, 5 to add, 0 to change, 0 to destroy** 확인 후 그 plan 파일로 apply. 적용 전 상태 백업 `terraform.tfstate.before-pve2` (gitignore)
+- proxmox2 준비: `local` 스토리지에 `snippets` 콘텐츠 허용 (`pvesm set local --content iso,vztmpl,backup,import,snippets`). Terraform 토큰은 설치 때 발급해 둔 `pve2_api_token`
 
 ### IP 계획
 
 | 용도 | 범위 |
 | --- | --- |
 | 공유기 DHCP (사용 금지) | .1~100, .128~148 |
-| Proxmox 호스트 | .200 |
+| Proxmox 호스트 | .200 (proxmox), .201 (proxmox2), .202 (노트북 bank-cp3) |
 | k8s 노드 | .230~.239 |
 | MetalLB LoadBalancer 풀 | .240~.250 |
 | 게이트웨이 / DNS | .254 |

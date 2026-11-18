@@ -16,6 +16,24 @@ variable "pve_node" {
   default     = "proxmox"
 }
 
+variable "pve2_endpoint" {
+  description = "두 번째 Proxmox 호스트 API 주소 (2026-11-18 노드 확장)"
+  type        = string
+  default     = "https://172.30.1.201:8006/"
+}
+
+variable "pve2_api_token" {
+  description = "두 번째 호스트의 API 토큰. 형식: terraform@pve!provider=<uuid>"
+  type        = string
+  sensitive   = true
+}
+
+variable "pve2_node" {
+  description = "두 번째 Proxmox 노드 이름"
+  type        = string
+  default     = "proxmox2"
+}
+
 variable "ssh_private_key_path" {
   description = "Proxmox root와 VM 접속에 쓰는 SSH 개인키"
   type        = string

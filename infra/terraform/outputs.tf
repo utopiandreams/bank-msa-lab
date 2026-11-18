@@ -1,6 +1,6 @@
 output "nodes" {
-  description = "노드 이름 → IP"
-  value       = { for name, n in local.nodes : name => n.ip }
+  description = "노드 이름 → 호스트 / IP"
+  value       = { for name, n in local.nodes : name => "${n.host} ${n.ip}" }
 }
 
 output "ssh" {

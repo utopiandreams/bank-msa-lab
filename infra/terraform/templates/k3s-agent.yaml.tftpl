@@ -27,3 +27,6 @@ runcmd:
     sh -s - agent
     --node-ip ${ip}
     --node-label ${node_label}
+%{ for label in extra_labels ~}
+    --node-label ${label}
+%{ endfor ~}
