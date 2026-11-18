@@ -193,7 +193,7 @@
 - [ ] **플랫폼 엔지니어링 트랙 (2026-11-17 추가, 19주 차 버퍼 이후):** 오퍼레이터 = 관리형 서비스 (CloudNativePG ≈ RDS, Strimzi ≈ MSK, Redis 오퍼레이터 ≈ ElastiCache). 그 위에 Crossplane으로 `kind: Database` 같은 셀프 서비스 API, Backstage로 콘솔. 오퍼레이터를 추가할 때마다 "AWS의 무엇에 해당하나"를 같이 정리
 - [ ] **인증 서버 분리 (2026-11-14 추가, 노드 확장 뒤):** gateway 학습용 발급(HS256) → Keycloak(RS256 + JWKS). 키 교체(`kid`), 토큰 폐기(짧은 TTL + 리프레시, 블랙리스트), **인증 서버 장애 실험**(로컬 검증이라 기존 사용자 송금은 계속됨 vs introspection 방식은 단일 장애점) → 패널 버튼 "인증 서버 죽이기"
 - [ ] **NetworkPolicy · 제로 트러스트 (2026-11-14 추가):** gateway 뒤 서비스가 `X-User-Id` 헤더를 그대로 믿는 문제(파드 하나가 뚫리면 횡적 이동으로 위조 가능). 선택지: NetworkPolicy로 "transfer는 gateway에서만" / 서비스도 JWT 재검증. 위조 요청을 먼저 재현한 뒤 막는다
-- [ ] **CI 변경 감지 (2026-11-14 추가):** 지금은 matrix가 고정이라 push마다 모든 서비스를 다시 빌드하고 태그를 갈아 끼워, 안 바뀐 서비스도 롤링 재시작된다. 바뀐 경로(`services/<서비스>/**`)만 빌드하고, 공통 경로(`build-logic`, `gradle`, Dockerfile, 워크플로)가 바뀌면 전부 빌드. 서비스가 4개 넘어가기 전에
+- [x] **CI 변경 감지 (2026-11-14 추가, 2026-11-19 완료: `.github/scripts/changed-services.sh` + 판정 job → 동적 matrix, pitfalls 14):** 지금은 matrix가 고정이라 push마다 모든 서비스를 다시 빌드하고 태그를 갈아 끼워, 안 바뀐 서비스도 롤링 재시작된다. 바뀐 경로(`services/<서비스>/**`)만 빌드하고, 공통 경로(`build-logic`, `gradle`, Dockerfile, 워크플로)가 바뀌면 전부 빌드. 서비스가 4개 넘어가기 전에
 - [ ] **리눅스 네트워크 딥다이브:** netfilter 처리 단계, DNAT/SNAT, conntrack을 밑에서부터 → 이어서 X-Forwarded-For와 고객 IP 유실, `externalTrafficPolicy: Local` 전후 실측, Spring `forward-headers-strategy`, 헤더 위조. 재료: `docs/infra/notes/k8s-service-networking.md`. 늦어도 3주 차 `gateway`에서 고객 IP를 로그에 남기기 전, 또는 19주 차 버퍼에
 
 Phase 1~3에서는 k6를 CLI로 돌리되, **나중에 패널 버튼으로 옮길 것을 전제로** 시나리오를 `load-test/`에 하나씩 분리해 둔다. 실험 스위치도 처음부터 설정값으로 바꿀 수 있게 만든다 (하드코딩 금지).
