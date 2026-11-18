@@ -33,8 +33,13 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
-          {{- if or .Values.env .Values.secretEnv }}
+            # actuator 전용 포트. Service에는 넣지 않는다 → Ingress로 나갈 길이 없고, Prometheus만 PodMonitor로 파드를 직접 긁는다
+            - name: management
+              containerPort: {{ .Values.managementPort }}
           env:
+            # 앱의 management.server.port를 차트 값으로 고정한다 (포트 번호의 기준은 차트 하나)
+            - name: MANAGEMENT_SERVER_PORT
+              value: {{ .Values.managementPort | quote }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -46,25 +51,26 @@ spec:
                   name: {{ $v.secret }}
                   key: {{ $v.key }}
             {{- end }}
-          {{- end }}
           # startup: 기동 완료 전까지 liveness·readiness를 보류 (느린 기동을 죽음으로 오해하지 않게)
+          # 프로브는 앱 포트(http)의 /livez·/readyz (management.endpoint.health.probes.add-additional-paths).
+          # 관리 포트로 받으면 앱 포트가 고장 나도 Ready로 보인다 → 요청을 못 받는 파드에 트래픽이 계속 간다
           startupProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: /livez
               port: http
             periodSeconds: {{ .Values.probes.startup.periodSeconds }}
             failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           # liveness: 실패하면 컨테이너를 재시작한다 → "재시작하면 낫는 상태"만 판단해야 한다
           livenessProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: /livez
               port: http
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           # readiness: 실패하면 Service에서 빠진다 (재시작은 안 함) → 트래픽을 받을 준비가 됐는가
           readinessProbe:
             httpGet:
-              path: /actuator/health/readiness
+              path: /readyz
               port: http
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}

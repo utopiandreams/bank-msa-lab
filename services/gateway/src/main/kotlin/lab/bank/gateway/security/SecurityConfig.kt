@@ -29,7 +29,12 @@ class SecurityConfig {
     fun securityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain = http {
         authorizeExchange {
             authorize(pathMatchers(HttpMethod.POST, "/auth/token"), permitAll)   // 학습용 발급 (비밀번호 없음)
-            authorize("/actuator/health/**", permitAll)              // 쿠버네티스 프로브
+            authorize("/livez", permitAll)                           // 쿠버네티스 프로브 (앱 포트, add-additional-paths)
+            authorize("/readyz", permitAll)
+            // actuator는 관리 포트(8081)에만 있다. 포트를 나눠도 이 Security 체인은 관리 포트에도 걸리므로
+            // (ManagementPortTest로 확인) Prometheus가 토큰 없이 긁을 수 있게 연다. 앱 포트에는 actuator가 없어서
+            // 이 허용이 밖으로 새지 않는다 → 누가 관리 포트 분리를 지우면 ManagementPortTest "앱 포트 404"가 깨진다
+            authorize("/actuator/**", permitAll)
             authorize(anyExchange, authenticated)                    // 나머지는 전부 토큰 필요 (모르는 경로도 401)
         }
         // 이 한 줄이: Authorization: Bearer 추출 → 서명 검증(아래 디코더) → exp·nbf·iss 검사 → 실패 시 401 + WWW-Authenticate

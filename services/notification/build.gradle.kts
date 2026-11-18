@@ -14,6 +14,7 @@ dependencies {
 	implementation(project(":libs:common"))                                  // 이벤트 스키마 (ADR-0003)
 	implementation("org.springframework.boot:spring-boot-starter-kafka")    // 송금 끝 이벤트 구독
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	runtimeOnly("io.micrometer:micrometer-registry-prometheus")              // /actuator/prometheus (버전은 Boot가 관리)
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")   // actuator(프로브) HTTP 입구
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")

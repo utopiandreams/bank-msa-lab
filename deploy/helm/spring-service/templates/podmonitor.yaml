@@ -1,0 +1,20 @@
+{{- if .Values.metrics.enabled }}
+# 이 서비스의 파드를 Prometheus 수집 대상으로 등록한다. Service가 아니라 파드를 직접 고르는 PodMonitor를 쓰는 이유:
+# 관리 포트를 Service에 넣지 않기 위해서 (ServiceMonitor는 Service 포트가 있어야 한다)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "spring-service.name" . }}
+  labels:
+    {{- include "spring-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "spring-service.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: management
+      path: /actuator/prometheus
+      {{- with .Values.metrics.interval }}
+      interval: {{ . }}
+      {{- end }}
+{{- end }}

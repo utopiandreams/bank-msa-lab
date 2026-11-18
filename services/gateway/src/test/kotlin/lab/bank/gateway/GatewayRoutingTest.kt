@@ -74,9 +74,10 @@ class GatewayRoutingTest {
     }
 
     @Test
-    fun `gateway 자신의 health는 토큰 없이 열려 있다 (쿠버네티스 프로브)`() {
+    fun `gateway 자신의 프로브는 토큰 없이 열려 있다 (쿠버네티스 프로브, 앱 포트의 livez)`() {
+        // 2026-11-18: actuator를 관리 포트로 옮기면서 프로브는 앱 포트의 /livez·/readyz로 (ManagementPortTest)
         WebTestClient.bindToServer().baseUrl("http://localhost:$port").build()
-            .get().uri("/actuator/health").exchange().expectStatus().isOk
+            .get().uri("/livez").exchange().expectStatus().isOk
     }
 
     companion object {
