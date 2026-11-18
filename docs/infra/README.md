@@ -227,7 +227,7 @@ services/ 등 push → 테스트 → amd64 이미지 → ghcr.io/utopiandreams/<
 
 공통 차트의 실무 포인트:
 - **CPU limit 없음, 메모리 limit만.** JVM 기동 때 CPU 스로틀링 → startupProbe 실패 → 재시작 루프를 피한다. 힙은 메모리 limit의 75%.
-- **프로브 3종.** startup(기동 끝날 때까지 나머지 보류) / liveness(실패 시 재시작 → 재시작으로 낫는 것만) / readiness(실패 시 Service에서 제외).
+- **프로브 3종.** startup(기동 끝날 때까지 나머지 보류) / liveness(실패 시 재시작 → 재시작으로 낫는 것만) / readiness(실패 시 Service에서 제외). 경로는 앱 포트의 `/livez`·`/readyz` (2026-11-18, actuator는 관리 포트 8081).
 - **종료 순서.** preStop sleep 5초(엔드포인트 제거가 Traefik까지 퍼질 시간) → SIGTERM → Spring graceful shutdown → `terminationGracePeriodSeconds` 45초 후 SIGKILL.
 - **무중단 롤링.** `maxUnavailable: 0`, `maxSurge: 1` → replicas 1이어도 새 파드가 Ready 된 뒤에 기존 파드를 내린다.
 - **보안 기본값.** 비root(uid 10001), 읽기 전용 루트 파일시스템(+ `/tmp` emptyDir), capability 전부 제거.
@@ -236,6 +236,54 @@ GitOps 함정 메모:
 - **sync-wave는 Application 사이에서 "준비될 때까지" 기다려 주지 않는다** (Argo CD는 기본적으로 Application의 health를 판정하지 않음). 그래서 metallb-config에 `retry` + `SkipDryRunOnMissingResource`를 넣어, MetalLB CRD와 웹훅이 뜰 때까지 재시도하게 했다.
 - MetalLB가 실행 중에 CRD의 caBundle을 채워 넣어서 OutOfSync로 보인다 → `ignoreDifferences`로 무시한다.
 - Argo CD는 기본 3분마다 Git을 확인한다. 바로 반영하려면 UI에서 Refresh를 누르거나 `kubectl -n argocd annotate application <앱> argocd.argoproj.io/refresh=hard --overwrite`를 실행한다.
+
+### 관측성 기본 스택 (2026-11-18, 아직 미적용)
+
+10주 차에서 **기본 스택만** 앞당겼다. 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려는 것이고, 같은 대시보드를 일찍부터 봐야 평소 모양이 눈에 익는다. Loki·Tempo·Alertmanager·SLO·서비스별 RED 대시보드 설계는 원래 주차에 한다.
+
+| Argo CD 앱 | 내용 | wave |
+| --- | --- | --- |
+| `kube-prometheus-stack` | 차트 93.4.0 (operator v0.95.2), 네임스페이스 `monitoring`, 릴리스 `kps` | 0 |
+| `grafana-dashboards` | `deploy/grafana/` (kustomize: JSON → ConfigMap `grafana_dashboard=1`) | 1 |
+| `monitoring-targets` | `deploy/platform/monitoring/` Kafka·CloudNativePG PodMonitor (`bank`) | 1 |
+| 서비스 4개 | 공통 차트가 서비스마다 PodMonitor 생성 (`metrics.enabled`) | 2 |
+
+결정과 이유:
+- **수집 대상은 선언으로.** prometheus-operator가 PodMonitor·ServiceMonitor를 보고 수집 설정을 만든다. `*SelectorNilUsesHelmValues: false`로 릴리스 라벨 없는 모니터도 전부 줍는다 (기본값이면 이 Helm 릴리스가 만든 것만 수집).
+- **k3s에 맞춰 끈 것:** controller-manager·scheduler·kube-proxy·etcd 수집. k3s는 이것들을 파드가 아니라 k3s 프로세스 하나로 돌려서, 켜 두면 영원히 Down + 알림 규칙이 계속 울린다. **etcd는 내장 etcd 전환(노드 확장) 뒤** `--etcd-expose-metrics` + `kubeEtcd.endpoints`로 다시 켠다.
+- **Alertmanager 끔** (11주 차). 기본 알림 규칙은 평가되므로 Prometheus UI의 Alerts 탭에서는 보인다.
+- **operator 웹훅 끔:** Helm 훅 Job과 인증서 Secret이 Argo CD에서 매 동기화마다 다시 돌거나 OutOfSync로 남기 쉽다. 잃는 것은 PrometheusRule 문법 사전 검사 하나.
+- **수집 간격 15초**(기본 30초): k6 실험이 몇 분짜리라. 대시보드에서는 `rate(...[1m])` 이상을 쓴다.
+- **보존:** 7일 또는 8GB 중 먼저 닿는 쪽, PVC 10Gi(local-path). local-path라 Prometheus가 있는 노드가 죽으면 그동안 지표를 못 본다 (17주 차 호스트 다운 실험 때 "관측 도구도 같이 죽는" 장면이 될 수 있음 → 그때 재검토).
+- **Grafana는 영속 볼륨 없음.** 대시보드는 Git(`deploy/grafana/`)이 기준. 화면에서 고친 건 재시작하면 사라지므로 Export → JSON → 커밋.
+- **Kafka:** `metricsConfig: strimziMetricsReporter`(JMX Exporter 대신 Strimzi 자체 플러그인, 설정 한 줄) + **Kafka Exporter**(컨슈머 랙. 브로커 지표에는 랙이 없다).
+- **CloudNativePG:** `Cluster.spec.monitoring.enablePodMonitor`는 1.30 CRD에서 deprecated → PodMonitor 하나로 모든 DB 인스턴스(`cnpg.io/podRole: instance`)를 수집.
+
+**서비스 지표와 관리 포트 분리** (pitfalls 21):
+- 서비스 4개에 `micrometer-registry-prometheus`(2026-11-18 승인). actuator는 **관리 포트 8081**로 옮겼다. 8080에 두면 gateway Ingress로 `/actuator/prometheus`가 인터넷에 열린다.
+- 8081은 Service에 넣지 않는다 → Ingress로 나갈 길이 없고, Prometheus는 **PodMonitor**로 파드를 직접 긁는다 (ServiceMonitor는 Service 포트가 필요해서 PodMonitor를 골랐다).
+- **프로브는 앱 포트의 `/livez`·`/readyz`** (`add-additional-paths: true`). 관리 포트로 프로브를 받으면 앱 포트가 고장 나도 Ready로 보인다.
+- 포트 번호의 기준은 차트(`managementPort`) → 환경변수 `MANAGEMENT_SERVER_PORT`로 앱 설정을 덮어쓴다.
+- `http.server.requests` 히스토그램을 켰다 → Prometheus에서 `histogram_quantile`로 p99. 앱 안에서 계산하는 백분위(`percentiles`)는 파드 여러 개를 합칠 수 없어서 쓰지 않는다.
+- 모든 지표에 `application` 라벨 (`management.metrics.tags.application`). JVM 대시보드가 이 라벨로 고른다.
+- **첫 배포 때 주의:** 차트(프로브 경로 변경)가 먼저 반영되고 새 이미지 태그가 몇 분 뒤에 반영되는 사이, 옛 이미지 + 새 프로브(`/livez` 404) 조합의 새 파드가 Ready가 안 된다. `maxUnavailable: 0`이라 기존 파드가 계속 서비스하므로 장애는 아니고, CI가 태그를 커밋하면 풀린다 (pitfalls 18 expand → contract의 작은 사례).
+
+Grafana 관리자 계정 (Git 밖, 클러스터에서 한 번):
+```bash
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n monitoring create secret generic grafana-admin \
+  --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -base64 18)"
+kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+차트에 맡기면 무작위 비밀번호를 만드는데, Argo CD가 동기화마다 템플릿을 다시 그려 비밀번호가 계속 바뀐다. 그래서 미리 만든 Secret을 쓴다.
+
+메모리 예산 (요청 / 한도): Prometheus 768Mi / 1.5Gi, Grafana 192Mi / 384Mi, operator 128Mi / 256Mi, kube-state-metrics 64Mi / 128Mi, node-exporter 노드당 32Mi / 64Mi, Kafka Exporter 64Mi / 128Mi → 요청 합계 약 1.4GB. 적용 후 실측으로 갱신한다.
+
+적용 후 확인 (노드 올린 뒤):
+1. Secret 생성 → push → Argo CD에서 `kube-prometheus-stack`·`grafana-dashboards`·`monitoring-targets` Healthy
+2. `kubectl -n monitoring port-forward svc/kps-prometheus 9090` → Status → Targets: apiserver·kubelet·coredns·node-exporter·kube-state-metrics·Kafka·Kafka Exporter·CNPG 3개·서비스 4개 모두 UP
+3. `http://grafana.172.30.1.240.nip.io` → 노드·파드 기본 대시보드, Strimzi Kafka·Kafka Exporter(notification 컨슈머 그룹 랙), CloudNativePG, JVM (Micrometer)
+4. 송금 몇 건 → `histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{application="transfer"}[1m])))`
 
 ### 알려진 한계
 - bpg 프로바이더는 스니펫 업로드와 이미지 디스크 임포트를 SSH로 처리한다. 그래서 이 부분만 Proxmox root SSH(키 인증)를 쓴다. 개선 방향: sudo 권한이 있는 일반 SSH 사용자.
@@ -269,6 +317,8 @@ GitOps 함정 메모:
 - Argo CD UI: `http://argocd.172.30.1.240.nip.io` (admin / 비밀번호: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`)
 - hello 테스트 앱: `http://hello.172.30.1.240.nip.io`
 - core: `http://core.172.30.1.240.nip.io/actuator/health` (3주 차 gateway가 생기면 닫는다)
+- Grafana: `http://grafana.172.30.1.240.nip.io` (admin / 비밀번호: Secret `monitoring/grafana-admin`, 위 "관측성 기본 스택")
+- Prometheus UI: Ingress 없음 (인증이 없어서). `kubectl -n monitoring port-forward svc/kps-prometheus 9090`
 
 ## 7. 트러블슈팅 로그
 

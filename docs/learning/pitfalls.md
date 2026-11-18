@@ -13,7 +13,7 @@
 | 분산 | [6. 타임아웃 ≠ 실패](#6-타임아웃--실패) · [7. 타임아웃 계층](#7-바깥-타임아웃--안쪽-타임아웃) · [8. 트랜잭션 안의 원격 호출](#8-트랜잭션-안에서-원격-호출하지-않는다) · [9. TOCTOU](#9-toctou-검사와-사용-사이의-틈) |
 | 데이터 | [10. 운영 테이블에 NOT NULL 추가](#10-운영-테이블에-not-null-컬럼-추가와-백필) · [11. Flyway](#11-flyway-적용된-파일은-고치지-않는다-재기동-때만-터지는-장애) · [12. 제약 위반 구분](#12-제약-위반은-제약-이름으로-구분한다) |
 | 분산 (추가) | [17. 멱등 재요청은 다시 판정하지 않는다](#17-멱등-재요청은-처음-판정을-다시-하지-않는다) · [18. 서비스 간 계약 변경 순서](#18-서비스-간-계약을-바꿀-때는-순서가-있다-expand--contract) · [19. 2대로는 HA가 안 된다](#19-2대로는-ha가-안-된다-과반수와-장애-영역) · [20. Kafka가 죽으면 send()가 60초 멈춘다](#20-kafka가-죽으면-프로듀서-send가-60초-멈춘다-maxblockms) |
-| 운영 | [13. 보이지 않는 기본값](#13-보이지-않는-기본값) · [14. 모노레포 CI](#14-모노레포-ci-안-바뀐-서비스까지-재배포) · [15. GitOps 밖 비밀값](#15-gitops-밖의-비밀값) · [16. JVM과 CPU limit](#16-jvm에-cpu-limit을-걸면-기동이-느려진다) |
+| 운영 | [13. 보이지 않는 기본값](#13-보이지-않는-기본값) · [14. 모노레포 CI](#14-모노레포-ci-안-바뀐-서비스까지-재배포) · [15. GitOps 밖 비밀값](#15-gitops-밖의-비밀값) · [16. JVM과 CPU limit](#16-jvm에-cpu-limit을-걸면-기동이-느려진다) · [21. 지표 엔드포인트 노출과 관리 포트](#21-지표-엔드포인트가-인터넷에-열린다-관리-포트를-나눠도-보안-체인은-따라온다) |
 
 ---
 
@@ -210,3 +210,13 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 외부 호출의 **모든** 타임아웃을 명시한다 (CLAUDE.md 7장). 프로듀서는 `max.block.ms`·`request.timeout.ms`·`delivery.timeout.ms`를 서비스 응답 시간 예산에 맞춘다. 부수 기능(알림)의 실패가 핵심 기능(송금)을 막지 않게 포트 계약을 "예외를 던지지 않는다"로.
 - 🎤 "Kafka가 죽으면 이벤트를 발행하는 API는 어떻게 되나요?" / "send()는 비동기인데 왜 막히죠?"
 - 📎 `services/transfer/.../KafkaTransferEventPublisher.kt`, `KafkaTransferEventPublisherTest` "Kafka에 못 붙어도…", `application.yaml` `spring.kafka.producer.properties`
+
+### 21. 지표 엔드포인트가 인터넷에 열린다: 관리 포트를 나눠도 보안 체인은 따라온다
+
+- **장면 (2026-11-18, 관측성 기본 스택):** 서비스에 `/actuator/prometheus`를 붙이려는데, gateway는 Ingress로 밖에 열린 유일한 입구다.
+- **함정 1:** actuator를 앱 포트(8080)에 두면 지표가 **인터넷에 노출된다.** 경로별 호출 수·에러율·라이브러리 버전·커넥션 풀 크기가 다 보여 공격자에게 지도가 된다. 실제로 Spring Boot actuator 노출(`/env`, `/heapdump`)은 흔한 침해 경로다.
+- **함정 2:** 그래서 관리 포트(8081)로 나눴더니, **WebFlux의 Spring Security 체인은 관리 포트에도 그대로 걸려** Prometheus가 401을 받았다 (`ManagementPortTest`가 잡음). "포트를 나누면 보안 설정과 무관하다"는 가정이 틀렸다.
+- **함정 3:** 프로브까지 관리 포트로 옮기면, 앱 포트(Tomcat·Netty)가 고장 나 요청을 못 받는데도 관리 포트는 살아 있어 **Ready로 보인다** → 죽은 파드에 트래픽이 계속 간다.
+- **원칙:** ① 지표·관리 엔드포인트는 외부 경로(Service·Ingress)에 없는 포트로 ② 보안 체인이 어느 포트에 걸리는지 **테스트로 확인** ("밖에서는 404", "관리 포트에서는 200") ③ 프로브는 실제 트래픽이 들어오는 포트로 (`add-additional-paths`).
+- 🎤 "actuator를 운영에서 어떻게 노출하나요?" / "readiness를 관리 포트로 받으면 뭐가 문제죠?" / "Prometheus는 어떻게 파드를 찾아 긁나요?"
+- 📎 `services/gateway/.../ManagementPortTest.kt`, `SecurityConfig.kt`, `deploy/helm/spring-service/templates/podmonitor.yaml`, `docs/infra/README.md` "관측성 기본 스택"

@@ -197,6 +197,29 @@
 
 ---
 
+## 2026-11-18 (오후) · 관측성 기본 스택 준비 (10주 차에서 앞당김, 클러스터 꺼져 있어 미적용)
+
+**한 일**
+- `kube-prometheus-stack` 93.4.0을 Argo CD 앱으로 추가 (Prometheus 15초 수집·7일/8GB 보존·PVC 10Gi, Grafana Ingress, node-exporter, kube-state-metrics). k3s 내장 컴포넌트 수집 끔, Alertmanager는 11주 차
+- 대시보드를 코드로: `deploy/grafana/` (kustomize로 JSON → ConfigMap). Strimzi Kafka·KRaft·Kafka Exporter, CloudNativePG, JVM (Micrometer)
+- Kafka: `strimziMetricsReporter` + Kafka Exporter(컨슈머 랙). Kafka·CNPG PodMonitor (`deploy/platform/monitoring/`)
+- 서비스 4개: `micrometer-registry-prometheus`, actuator를 관리 포트 8081로 분리, 프로브는 앱 포트 `/livez`·`/readyz`, API 지연 히스토그램, `application` 라벨. 공통 차트가 PodMonitor 생성
+- 테스트 148개 통과 (core 56, transfer 68, notification 6, gateway 18). gateway `ManagementPortTest` 추가
+
+**결정**
+- actuator 관리 포트 분리: gateway Ingress로 지표가 인터넷에 열리는 것을 막는다. Service에 넣지 않고 PodMonitor로 파드를 직접 수집
+- Grafana 관리자 비밀번호는 미리 만든 Secret (차트 무작위 생성은 Argo CD에서 동기화마다 바뀜)
+- etcd 지표는 내장 etcd 전환(노드 확장) 뒤에
+
+**버그·트러블슈팅**
+- 관리 포트를 나눴는데 Prometheus가 401: WebFlux Spring Security 체인이 관리 포트에도 걸린다 → `/actuator/**` 허용 + "앱 포트에는 actuator 404" 테스트로 보호 (pitfalls 21)
+
+**다음**
+- 노드 올리면: Grafana Secret 생성 → push → Targets 전부 UP 확인 → 메모리 실측으로 예산 갱신 (`docs/infra/README.md` "관측성 기본 스택" 확인 절차)
+- 그다음 k6 기준선 → 노드 확장 (순서 그대로)
+
+---
+
 ## 이력서 소재 (계속 갱신)
 
 > 아직 "결과 수치"가 있는 실험은 없다. Phase 2(6~8주 차)부터 재현 → 해결 → 전후 수치가 쌓인다.
@@ -233,6 +256,10 @@
 - Kafka 이벤트 소비 장애를 실제 Kafka로 재현하고 대응: 중복 수신 시 알림 이중 발송(이벤트 ID 유일 제약으로 차단), 깨진 메시지 하나가 파티션 전체를 멈추는 문제(격리 후 건너뛰기)
   - (보류) 이벤트 스키마 호환성 규칙: 지금은 역직렬화 설정 한 줄이라 약하다. 6주 차 이후 실제로 스키마를 바꿔 볼 때 "추가만 허용, 변경은 버전 업 + 소비자 먼저 배포" 규칙으로 쓴다
 - 프로듀서 블로킹 타임아웃(`max.block.ms`)을 조정해 브로커 장애가 송금 API로 전파되는 경로 차단
+
+**관측성**
+- Prometheus·Grafana(kube-prometheus-stack)를 GitOps로 구성하고 대시보드를 코드로 관리, 수집 대상은 PodMonitor 선언으로 자동 등록 (서비스·Kafka 컨슈머 랙·PostgreSQL)
+- actuator를 관리 포트로 분리해 지표 엔드포인트의 외부 노출을 막고, 보안 필터가 관리 포트에도 적용되는 함정을 테스트로 발견·고정
 
 **운영 / 트러블슈팅**
 - 재시작 때만 실패하는 Flyway 장애(PostgreSQL search_path와 스키마 이름 충돌)를 운영과 같은 계정 조건의 테스트로 재현·수정
