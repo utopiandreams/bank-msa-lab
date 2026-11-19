@@ -1,5 +1,6 @@
 package lab.bank.transfer.application
 
+import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 import java.util.UUID
 
@@ -7,4 +8,6 @@ import java.util.UUID
 interface TransferQuery {
 
     fun find(id: UUID): Transfer?
+
+    fun findInterbank(id: UUID): InterbankTransfer?
 }

@@ -8,6 +8,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 import lab.bank.transfer.domain.TransferStatus
+import org.hibernate.annotations.SQLRestriction
 import java.time.Instant
 import java.util.UUID
 
@@ -17,9 +18,13 @@ import java.util.UUID
  * 포트를 가짜로 바꿔 끼우는 테스트(타임아웃·결과 불명)를 쉽게 한다. 대가가 이 클래스와 TransferMapper.
  *
  * 필드가 var인 이유: 저장 모델이라 상태 보호가 목적이 아니다. 매퍼만 쓴다.
+ *
+ * 타행 송금(InterbankTransferJpaEntity)과 같은 테이블을 쓴다 (Flyway V4). kind는 매핑하지 않아 INSERT하면 DB 기본값 DOMESTIC이 들어간다.
+ * @SQLRestriction: 읽을 때 당행 행만. 없으면 같은 멱등 키의 타행 행(WITHDRAWN 등)을 TransferStatus로 읽다가 매핑 예외(500)가 난다.
  */
 @Entity
 @Table(name = "transfer", schema = "transfer")
+@SQLRestriction("kind = 'DOMESTIC'")
 class TransferJpaEntity(
     @Id
     var id: UUID,

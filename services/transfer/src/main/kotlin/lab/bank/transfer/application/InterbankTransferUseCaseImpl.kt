@@ -59,8 +59,9 @@ class InterbankTransferUseCaseImpl(
             start(InterbankTransfer.request(requesterId, idempotencyKey, fromAccountId, toBankCode, toAccountNumber, amount))
         } catch (e: DuplicateIdempotencyKeyException) {
             // 같은 키 동시 요청에서 늦은 쪽: 먼저 커밋한 송금을 재요청으로 돌려준다 (당행과 같은 처리)
+            // 타행으로는 안 보인다 = 이 키는 당행 송금이 쓰고 있다 (소거법, TransferUseCaseImpl과 같은 판단)
             val winner = repository.findByIdempotencyKey(requesterId, idempotencyKey)
-                ?: throw IllegalStateException("멱등 키 중복인데 송금이 없음: ${idempotencyKey.value}", e)
+                ?: throw IdempotencyConflictException(idempotencyKey, "당행 송금에 이미 쓰인 멱등 키입니다")
             return replay(winner, request)
         }
 

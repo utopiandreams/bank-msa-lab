@@ -33,5 +33,10 @@ class MissingUserException(reason: String) :
     TransferException("MISSING_USER", "요청자를 알 수 없습니다: $reason")
 
 // 같은 키로 다른 내용(계좌·금액)이 왔다: 키를 재사용한 클라이언트 버그. 먼저 처리된 송금과 충돌 → 409
-class IdempotencyConflictException(idempotencyKey: IdempotencyKey) :
-    TransferException("IDEMPOTENCY_CONFLICT", "같은 멱등 키로 다른 내용의 송금이 이미 있습니다: ${idempotencyKey.value}")
+// reason: 무엇과 충돌했는지 (같은 종류의 다른 내용 / 다른 종류의 송금). 클라이언트가 할 일은 같다 → 코드는 하나, 문구로 원인을 알린다
+class IdempotencyConflictException(idempotencyKey: IdempotencyKey, reason: String = "같은 멱등 키로 다른 내용의 송금이 이미 있습니다") :
+    TransferException("IDEMPOTENCY_CONFLICT", "$reason: ${idempotencyKey.value}")
+
+// 송금 요청 본문의 조합이 틀렸다 (당행인데 받는 계좌 ID가 없음, 타행인데 계좌번호가 없음 등) → 400
+class InvalidTransferRequestException(reason: String) :
+    TransferException("INVALID_TRANSFER_REQUEST", "송금 요청이 올바르지 않습니다: $reason")

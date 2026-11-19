@@ -4,6 +4,7 @@ import lab.bank.transfer.domain.IdempotencyConflictException
 import lab.bank.transfer.domain.InvalidAmountException
 import lab.bank.transfer.domain.InvalidBankCodeException
 import lab.bank.transfer.domain.InvalidIdempotencyKeyException
+import lab.bank.transfer.domain.InvalidTransferRequestException
 import lab.bank.transfer.domain.MissingUserException
 import lab.bank.transfer.domain.SameAccountsException
 import lab.bank.transfer.domain.TransferException
@@ -28,6 +29,7 @@ class TransferExceptionHandler {
             is SameAccountsException -> HttpStatus.BAD_REQUEST
             is InvalidIdempotencyKeyException -> HttpStatus.BAD_REQUEST
             is InvalidBankCodeException -> HttpStatus.BAD_REQUEST
+            is InvalidTransferRequestException -> HttpStatus.BAD_REQUEST
             is MissingUserException -> HttpStatus.UNAUTHORIZED
             // 요청 형식은 맞지만 먼저 처리된 송금과 충돌 (core의 멱등 충돌과 같은 409)
             is IdempotencyConflictException -> HttpStatus.CONFLICT

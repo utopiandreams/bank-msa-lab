@@ -47,8 +47,10 @@ class TransferUseCaseImpl(
         } catch (e: DuplicateIdempotencyKeyException) {
             // 같은 키 동시 요청에서 늦은 쪽: 둘 다 "없음"을 보고 INSERT했고 먼저 커밋한 쪽이 이겼다.
             // 트랜잭션 밖에서 잡았으니 새로 읽으면 이긴 쪽의 송금이 보인다 → 재요청으로 처리 (재시도는 이 한 번뿐)
+            // 키 UNIQUE는 당행·타행 통틀어 하나인데 당행으로는 안 보인다 = 이 키는 타행 송금이 쓰고 있다 (소거법).
+            // PostgreSQL은 상대 행이 커밋된 뒤에만 UNIQUE 위반을 확정하므로 "아직 안 보이는" 경우는 없다
             val winner = transferRepository.findByIdempotencyKey(requesterId, idempotencyKey)
-                ?: throw IllegalStateException("멱등 키 중복인데 송금이 없음: ${idempotencyKey.value}", e)
+                ?: throw IdempotencyConflictException(idempotencyKey, "타행 송금에 이미 쓰인 멱등 키입니다")
             return replay(winner, fromAccountId, toAccountId, amount)
         }
 
