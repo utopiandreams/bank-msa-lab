@@ -143,7 +143,7 @@
   - 2026-11-19 결정: 고객 응답은 **이번엔 동기**, 비동기·혼합(N초 대기 후 "처리 중")은 8주 차 해소 스케줄러와 함께 보강. 15주 차 외부 지연 실험의 "전" 상태
   - [x] S-1: `bank-mock` 서비스 (송금 API, 같은 키 멱등, 수취 계좌 규칙 거절 + 거절률 설정값) + 배포. 거절도 200(판정 확실), 저장은 메모리. 클러스터 확인 (2026-11-19)
   - [x] S-2: core 미정산 계정(Flyway V3) + 타행 출금 / 출금 취소(역분개) API (2026-11-19). 취소는 원래 출금을 가리키고 금액·계좌는 원래 전표에서, `reverses_entry_id` UNIQUE로 한 번만(자연 키, 개발자 결정). 테스트 11개 추가
-  - [ ] S-3: transfer 타행 사가. **2026-11-19 분담: 사가 로직은 개발자가 직접 구현** (핵심 로직)
+  - [x] S-3: transfer 타행 사가. **2026-11-19 분담: 사가 로직은 개발자가 직접 구현** (핵심 로직)
     - [x] 배관 (Claude): Flyway V4 "공통 + 상세"(`transfer`에 kind·to_account_id NULL 허용·사가 상태, `interbank_transfer` 상세 테이블. 고객 멱등 키 UNIQUE가 공통 테이블에 있어 당행·타행 통틀어 유지), `CoreInterbankPort`·`ExternalBankPort` + 어댑터(외부 409·5xx·타임아웃은 Unknown = 보상 금지, 취소에는 Rejected 없음), notification CANCELLED 알림 + 이벤트 계약 넓힘(소비자 먼저, pitfalls 18)
     - [x] 사가 구현 (2026-11-20): 상태 머신·사가 지휘는 개발자, 저장 어댑터·API·발행 배관·테스트·리팩터링은 Claude. 테스트 119개
       - 상태 확정 (V5): 원격 호출마다 의도 상태 하나, 결과 불명은 의도 상태에 남는다 (pitfalls 27). `WITHDRAW_REQUESTED → WITHDRAWN → EXTERNAL_BANK_REQUESTED → COMPLETED`, 거절은 `FAILED` / `EXTERNAL_BANK_REJECTED`(= 보상 의도) `→ CANCELLED`
