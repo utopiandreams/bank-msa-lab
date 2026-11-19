@@ -68,6 +68,9 @@ brew install --cask balenaetcher
 - [ ] **Intel Virtualization Technology (VT-x)** → Enabled (이게 꺼져 있으면 VM이 안 뜬다)
 - [ ] (있으면) **VT-d** → Enabled
 - [ ] **Wake-on-LAN** (Power 메뉴, "Power On by PCI-E" 같은 이름일 수 있음) → Enabled
+- [ ] (ASUS) **Advanced → APM Configuration → ErP Ready** → Disabled (켜져 있으면 꺼진 동안 랜카드 전원이 끊겨 WOL 불가)
+- [ ] (ASUS) **Boot → Wait For 'F1' If Error** → Disabled (키보드 없이 부팅하려면 필수, 2026-11-19 이걸로 멈춤)
+- [ ] 설치 후 **꺼진 상태에서 WOL로 실제로 켜지는지** 확인 (`cluster-down.sh <호스트>` → `cluster-up.sh <호스트>`)
 - [ ] 부팅 순서: USB 우선 (또는 부팅할 때 `F11`/`F12` 부트 메뉴에서 USB 선택)
 
 ## 4. 설치 화면에 칠 값
