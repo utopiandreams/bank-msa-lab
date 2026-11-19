@@ -1,6 +1,7 @@
 package lab.bank.transfer.application.port.out
 
 import lab.bank.transfer.domain.IdempotencyKey
+import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.UserId
 import java.util.UUID
@@ -23,4 +24,14 @@ interface TransferRepository {
 
     // 멱등 키는 요청자별로 유일하다 (Flyway V3) → 요청자 없이 키만으로는 찾지 않는다
     fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): Transfer?
+}
+
+interface InterbankTransferRepository {
+
+    fun save(transfer: InterbankTransfer): InterbankTransfer
+
+    fun findById(id: UUID): InterbankTransfer?
+
+    fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): InterbankTransfer?
+
 }
