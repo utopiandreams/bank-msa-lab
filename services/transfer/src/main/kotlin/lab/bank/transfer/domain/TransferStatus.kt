@@ -34,3 +34,43 @@ enum class TransferStatus {
             COMPLETED, FAILED -> false
         }
 }
+
+enum class InterbankTransferStatus {
+    REQUESTED,
+
+    WITHDRAW_REQUESTED,
+    WITHDRAWN,
+
+    EXTERNAL_BANK_REQUESTED,
+    EXTERNAL_BANK_REJECTED,
+
+    FAILED,
+    CANCELLED,
+    COMPLETED,
+    ;
+
+    fun isFinal(): Boolean = this == CANCELLED || this == COMPLETED || this == FAILED
+
+    fun canTransitTo(to: InterbankTransferStatus): Boolean {
+        return when(this) {
+            REQUESTED -> WITHDRAW_REQUESTED == to
+            WITHDRAW_REQUESTED -> when (to) {
+                WITHDRAWN, FAILED, WITHDRAW_REQUESTED -> true
+                else -> false
+            }
+
+            WITHDRAWN -> EXTERNAL_BANK_REQUESTED == to
+            EXTERNAL_BANK_REQUESTED -> when (to) {
+                COMPLETED, EXTERNAL_BANK_REJECTED, EXTERNAL_BANK_REQUESTED -> true
+                else -> false
+            }
+
+            EXTERNAL_BANK_REJECTED -> when (to) {
+                CANCELLED, EXTERNAL_BANK_REJECTED -> true
+                else -> false
+            }
+
+            FAILED, CANCELLED, COMPLETED -> false
+        }
+    }
+}

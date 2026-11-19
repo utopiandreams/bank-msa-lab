@@ -20,6 +20,11 @@ class InvalidAmountException(amount: Long) :
 class SameAccountsException(fromAccountId: UUID, toAccountId: UUID) :
         TransferException("SAME_ACCOUNT_TRANSFER", "입금 계좌 번호와 출금 계좌번호가 같을 수 없습니다: $fromAccountId")
 
+// 받는 은행 코드가 형식(숫자 3자리)에 안 맞거나, 타행 송금인데 우리 은행 코드다 → 400
+// 우리 은행 코드: 당행 송금은 받는 계좌를 계좌 ID(UUID)로 받으므로 타행 요청(계좌번호 문자열)을 당행으로 돌려 처리할 수 없다
+class InvalidBankCodeException(bankCode: String, reason: String) :
+    TransferException("INVALID_BANK_CODE", "받는 은행 코드가 올바르지 않습니다 ($reason): $bankCode")
+
 class InvalidIdempotencyKeyException(reason: String) :
     TransferException("INVALID_IDEMPOTENCY_KEY", "멱등 키가 올바르지 않습니다: $reason")
 
