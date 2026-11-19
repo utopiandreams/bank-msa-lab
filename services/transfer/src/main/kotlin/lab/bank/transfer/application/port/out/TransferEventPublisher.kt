@@ -1,5 +1,6 @@
 package lab.bank.transfer.application.port.out
 
+import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 
 /**
@@ -15,4 +16,7 @@ interface TransferEventPublisher {
 
     /** 송금이 끝 상태(COMPLETED·FAILED)로 바뀌었을 때 호출한다 */
     fun publishFinished(transfer: Transfer)
+
+    /** 타행 송금이 끝 상태(COMPLETED·FAILED·CANCELLED)로 바뀌었을 때 호출한다 (ADR-0004). 같은 이벤트(TransferFinishedEvent)로 나간다 */
+    fun publishFinished(transfer: InterbankTransfer)
 }

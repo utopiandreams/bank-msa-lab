@@ -1,6 +1,8 @@
 package lab.bank.transfer.application.port.out
 
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.InterbankTransfer
+import org.hibernate.boot.jaxb.hbm.transform.TransformationHelper.transfer
 import java.util.UUID
 
 /**
@@ -12,4 +14,13 @@ data class ExternalTransferCommand(
     val toBankCode: String,
     val toAccountNumber: String,
     val amount: Amount,
-)
+) {
+    companion object {
+        fun fromDomain(interbankTransfer: InterbankTransfer) = ExternalTransferCommand(
+            interbankTransfer.id,
+            interbankTransfer.toBankCode.value,
+            interbankTransfer.toAccountId,
+            interbankTransfer.amount,
+        )
+    }
+}

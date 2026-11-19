@@ -17,4 +17,13 @@ class FakeCoreConfiguration {
     @Bean
     @Primary
     fun fakeTransferEventPublisher() = FakeTransferEventPublisher()
+
+    // 타행 사가: core 타행 출금·취소와 외부 결제망(bank-mock)
+    @Bean
+    @Primary
+    fun fakeCoreInterbankPort() = FakeCoreInterbankPort()
+
+    @Bean
+    @Primary
+    fun fakeExternalBankPort() = FakeExternalBankPort()
 }

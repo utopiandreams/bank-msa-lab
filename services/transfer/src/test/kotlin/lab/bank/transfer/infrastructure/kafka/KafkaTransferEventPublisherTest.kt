@@ -2,7 +2,9 @@ package lab.bank.transfer.infrastructure.kafka
 
 import lab.bank.common.event.TransferFinishedEvent
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.BankCode
 import lab.bank.transfer.domain.IdempotencyKey
+import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.UserId
 import org.apache.kafka.clients.consumer.ConsumerConfig
@@ -60,7 +62,7 @@ class KafkaTransferEventPublisherTest {
 
         publisher.publishFinished(transfer)
 
-        val record = consumeOne()
+        val record = consumeOne(transfer.id.toString())
         assertEquals(transfer.id.toString(), record.key())
         val json = jsonMapper.readTree(record.value())
         assertEquals(transfer.id.toString(), json["transferId"].asString())
@@ -70,6 +72,28 @@ class KafkaTransferEventPublisherTest {
         assertEquals("INSUFFICIENT_BALANCE", json["failureCode"].asString())
         assertEquals(TransferFinishedEvent.SCHEMA_VERSION, json["schemaVersion"].asInt())
         assertTrue(json["eventId"].asString().isNotBlank())
+    }
+
+    @Test
+    fun `타행 CANCELLED - 받는 쪽은 은행 코드·계좌번호, failureCode는 외부 거절 사유`() {
+        val transfer = InterbankTransfer.request(UserId("chulsoo"), IdempotencyKey("k-${UUID.randomUUID()}"), UUID.randomUUID(), BankCode("004"), "123-456", Amount(10_000))
+            .apply {
+                withdrawRequested()
+                withdrawn(UUID.randomUUID())
+                externalBankRequested()
+                externalBankRejected("ACCOUNT_NOT_FOUND")
+                cancelled(UUID.randomUUID())
+            }
+        val publisher = KafkaTransferEventPublisher(template(kafka.bootstrapServers), jsonMapper)
+
+        publisher.publishFinished(transfer)
+
+        val json = jsonMapper.readTree(consumeOne(transfer.id.toString()).value())
+        assertEquals("CANCELLED", json["status"].asString())
+        assertEquals("ACCOUNT_NOT_FOUND", json["failureCode"].asString())
+        assertEquals("004", json["toBankCode"].asString())
+        assertEquals("123-456", json["toAccountNumber"].asString())
+        assertTrue(json["toAccountId"].isNull)
     }
 
     // 재현: max.block.ms 기본값(60초)이면 Kafka가 죽었을 때 송금 API가 건마다 60초 멈춘다 (pitfalls 20)
@@ -82,7 +106,8 @@ class KafkaTransferEventPublisherTest {
         assertTrue(elapsed.inWholeMilliseconds < 3_000, "max.block.ms(1초) 근처에서 돌아와야 한다: $elapsed")
     }
 
-    private fun consumeOne(): ConsumerRecord<String, String> =
+    // 토픽을 테스트끼리 같이 쓰고 earliest로 읽는다 → 앞 테스트의 메시지가 먼저 보이므로 키로 골라 읽는다
+    private fun consumeOne(key: String): ConsumerRecord<String, String> =
         KafkaConsumer<String, String>(
             mapOf(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafka.bootstrapServers,
@@ -95,7 +120,7 @@ class KafkaTransferEventPublisherTest {
             consumer.subscribe(listOf(TransferFinishedEvent.TOPIC))
             val deadline = System.currentTimeMillis() + 15_000
             while (System.currentTimeMillis() < deadline) {
-                consumer.poll(Duration.ofMillis(500)).firstOrNull()?.let { return it }
+                consumer.poll(Duration.ofMillis(500)).firstOrNull { it.key() == key }?.let { return it }
             }
             error("15초 안에 메시지를 못 받음")
         }

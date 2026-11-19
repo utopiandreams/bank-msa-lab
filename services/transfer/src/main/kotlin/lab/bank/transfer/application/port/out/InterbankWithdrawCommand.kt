@@ -1,6 +1,7 @@
 package lab.bank.transfer.application.port.out
 
 import lab.bank.transfer.domain.Amount
+import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.UserId
 import java.util.UUID
 
@@ -15,4 +16,14 @@ data class InterbankWithdrawCommand(
     val requesterId: UserId,
     val fromAccountId: UUID,
     val amount: Amount,
-)
+) {
+    companion object {
+        fun fromDomain(interbankTransfer: InterbankTransfer) =
+            InterbankWithdrawCommand(
+                interbankTransfer.id,
+                interbankTransfer.requesterId,
+                interbankTransfer.fromAccountId,
+                interbankTransfer.amount,
+            )
+    }
+}
