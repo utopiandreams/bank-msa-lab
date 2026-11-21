@@ -298,3 +298,13 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** ① 발행은 "최소 한 번"으로 설계한다: Outbox + **컨슈머 멱등**은 짝이다 ② eventId는 **이벤트가 생길 때(outbox INSERT 때) 한 번** 정하고, 재시도해도 같은 값으로 보낸다 ③ 유실을 재현하려면 바이트가 아예 나가지 않는 장애를 만든다 (메타데이터를 받기 전에 브로커를 멈춰 `send()`가 `max.block.ms` 뒤 예외)
 - 🎤 "Kafka 프로듀서가 타임아웃 났으면 메시지는 안 들어간 건가요?" / "Outbox가 있으면 중복 발행은 없나요?" / "exactly-once는 어떻게 보장하나요?" (프로듀서 멱등은 한 프로듀서 세션 안의 재시도 중복만 막는다, 앱 재시작·릴레이 재시도는 못 막음 → 컨슈머 멱등)
 - 📎 `TransferEventLossTest` 주석, `KafkaTransferEventPublisher` (지금은 send 때 `UUID.randomUUID()`), notification `event_id` UNIQUE, pitfalls 6
+
+### 30. "커밋 전에 보내고 ack 받으면 되지 않나?": dual write는 없앨 수 없고, 순서로 결과를 고른다
+
+- **장면 (2026-11-21, 6주 차 Outbox):** 개발자 질문: "릴레이도 Kafka 전송과 DB 표시가 트랜잭션으로 안 묶이는 건 마찬가지다. 그러면 원래 흐름에서 커밋 전에 Kafka로 보내고 ack를 받은 뒤 커밋하면 유실이 없지 않나?"
+- **함정:**
+  - ack를 받은 뒤 커밋이 실패하면 (파드 종료, DB 연결 끊김, 낙관적 락 충돌) **유령 이벤트**: 송금은 롤백됐는데 "완료" 알림이 나갔다. Kafka에 나간 메시지는 회수할 수 없다 → 유실처럼 복구 불가
+  - Kafka 왕복 동안 DB 커넥션 점유, **Kafka 장애 = 송금 API 장애** (알림 때문에 송금이 실패, ADR-0003 원칙 위반)
+- **원칙:** 두 시스템에 걸친 쓰기는 원자적으로 만들 수 없다. 할 수 있는 건 **순서를 정해 장애 결과를 고르는 것**: 되돌릴 수 없는 쪽(Kafka, 외부 은행)보다 **우리 DB에 먼저 확정**한다. Outbox의 최악은 "중복"(컨슈머 멱등으로 복구)이고, 커밋 전 전송의 최악은 "유령"(복구 불가)이다. outbox 행 = 이벤트판 의도 상태 (pitfalls 27과 같은 구조)
+- 🎤 "그냥 커밋 전에 보내면 안 되나요?" / "Outbox 릴레이도 원자적이지 않은데 왜 괜찮죠?" / "Kafka 트랜잭션(exactly-once)으로 DB와 묶을 수 있나요?" (Kafka 트랜잭션은 Kafka 안의 읽기-처리-쓰기만 묶는다. 외부 DB는 못 묶음)
+- 📎 `TransferEventPublisher` KDoc (계약 변경), `TransferEventLossTest`, pitfalls 27 (의도 상태 먼저), 29 (발행 타임아웃 ≠ 미발행)
