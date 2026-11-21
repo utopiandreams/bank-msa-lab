@@ -79,10 +79,12 @@ UPDATE account SET balance = balance - :amt, version = version + 1
 - 💡 **락 범위는 트랜잭션 바깥.** DB 락은 커밋 때 풀리지만 Redis 락은 코드가 푸는 순간 풀린다. 커밋 전에 풀면 다음 요청이 커밋 안 된 옛 잔액을 읽는다 → lost update
 - 💡 대기자가 DB 커넥션을 쥐지 않는다 (트랜잭션 밖에서 기다림). 비관적 락과의 핵심 차이
 - 💡 Redisson pub/sub vs 스핀: 둘 다 스레드는 블로킹. 차이는 Redis 부하와 넘겨받는 속도. 경합이 심할수록 스핀이 불리 (Redis 스핀은 시도 한 번이 네트워크 왕복)
+  - 동작 원리(세마포어로 재우기 → 해제 PUBLISH → Netty 이벤트 루프가 release로 깨움), 메시지가 안 올 때(남은 TTL만큼만 대기), epoll·연결 공유·구독 연결 분리는 `docs/learning/io-and-event-loop.md`
+  - 구현: `REDIS`(getLock) / `REDIS_SPIN`(getSpinLock, 백오프 1ms×2 최대 128ms). 테스트 시간 기준 스핀이 2~4배 느렸음 (측정은 k6)
 - 💡 TTL 딜레마: 짧으면 처리 중에 만료돼 둘이 들어오고, 길면 죽은 클라이언트의 락이 오래 남는다 → Redisson 워치독, 그래도 GC 멈춤이면 뚫린다 → DB 쪽 안전망(`@Version`) 또는 펜싱 토큰
 - 💡 공정성: 기본 RLock은 불공정, `RFairLock`은 FIFO (대가: 명령 수, 죽은 대기자 때문에 뒷사람이 막힘)
 - 🎤 "DB 락이 있는데 분산 락을 왜 쓰나요?" / "락이 만료됐는데 작업이 안 끝났으면?" / "Redis가 죽으면?" / "Lettuce 스핀 락과 Redisson 차이는?"
-- 📎 (구현 후) REDIS 전략, k6 결과
+- 📎 `RedisAccountLocks`(대기 상한은 마감 시각 하나, ID 순서로 잡고 반대로 풂), `RedisLockScopeTest`, `RedisLockConcurrencyTest`(재시도 0), pitfalls 34, k6 결과(예정)
 
 ## 6. 공정성과 처리량
 
