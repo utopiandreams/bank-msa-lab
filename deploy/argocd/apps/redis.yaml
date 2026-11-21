@@ -1,0 +1,23 @@
+# Redis (분산 락 저장소, 7주 차). 오퍼레이터 없이 StatefulSet 하나 (deploy/platform/redis)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # 서비스(wave 2) 앞
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/platform/redis
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank
+  syncPolicy:
+    automated:
+      prune: true      # 저장하는 데이터가 없어서 지워져도 잃을 것이 없다 (DB·Kafka와 다름)
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

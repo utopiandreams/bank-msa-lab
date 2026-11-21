@@ -225,6 +225,7 @@ deploy/
 │       ├── core.yaml             (wave 2, 공통 차트 + core values → 네임스페이스 bank)
 │       ├── transfer-db.yaml      (wave 1, transfer 전용 Postgres)
 │       ├── transfer.yaml         (wave 2, 공통 차트 + transfer values)
+│       ├── redis.yaml            (wave 1, 분산 락 저장소 StatefulSet, 2026-11-22)
 │       └── ... gateway, notification(+db), bank-mock, kafka, 관측성 (파일 목록이 곧 설치 목록)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
 ├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
@@ -265,6 +266,16 @@ GitOps 함정 메모:
 - **sync-wave는 Application 사이에서 "준비될 때까지" 기다려 주지 않는다** (Argo CD는 기본적으로 Application의 health를 판정하지 않음). 그래서 metallb-config에 `retry` + `SkipDryRunOnMissingResource`를 넣어, MetalLB CRD와 웹훅이 뜰 때까지 재시도하게 했다.
 - MetalLB가 실행 중에 CRD의 caBundle을 채워 넣어서 OutOfSync로 보인다 → `ignoreDifferences`로 무시한다.
 - Argo CD는 기본 3분마다 Git을 확인한다. 바로 반영하려면 UI에서 Refresh를 누르거나 `kubectl -n argocd annotate application <앱> argocd.argoproj.io/refresh=hard --overwrite`를 실행한다.
+
+### Redis (2026-11-22, 7주 차 분산 락)
+
+- `deploy/platform/redis/redis.yaml`: `redis:8.2.11` 1대, Service `redis:6379` (ClusterIP). core는 `CORE_REDIS_ADDRESS=redis://redis:6379`
+- **StatefulSet인 이유:** Deployment 롤링은 새 파드를 먼저 띄워 잠깐 Redis가 두 대가 된다 → 락 장부가 둘 → 같은 락을 둘이 잡을 수 있다. StatefulSet(replicas 1)은 내린 뒤 띄운다
+- **저장 없음**(`--save ""`, `--appendonly no`): 락은 수 초짜리. 재시작 순간 락이 뚫릴 수 있는 건 DB `@Version` 안전망이 잡는다
+- `noeviction`: 메모리가 차도 키를 지우지 않고 쓰기를 거절 (락 키가 몰래 지워지면 락이 뚫린다)
+- 인증 없음 (클러스터 내부 전용, 학습 타협). NetworkPolicy 백로그에서 core만 접근하게 막는다
+- 운영형(오퍼레이터·Sentinel·복제)은 17주 차 "Redis 페일오버" 실험 때. AWS로 치면 ElastiCache
+- 확인: `kubectl -n bank exec redis-0 -- redis-cli ping`, 락 키 보기 `redis-cli --scan --pattern 'lock:*'`
 
 ### 관측성 기본 스택 (2026-11-18, 아직 미적용)
 

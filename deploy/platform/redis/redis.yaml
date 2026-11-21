@@ -1,0 +1,62 @@
+# Redis (7주 차 REDIS 락 전략의 분산 락 저장소). 지금은 1대, 저장 없음. 페일오버(Sentinel·복제)는 17주 차 "Redis 페일오버" 실험 때.
+#
+# Deployment가 아니라 StatefulSet인 이유: 락 저장소는 "한 번에 하나"여야 한다.
+#   Deployment의 롤링 업데이트는 새 파드를 먼저 띄우고 옛 파드를 내린다 (maxSurge) → 잠깐 Redis가 두 대 = 락 장부가 둘
+#   → 두 요청이 서로 다른 Redis에서 같은 계좌 락을 "둘 다" 잡을 수 있다. StatefulSet(replicas 1)은 옛 파드를 지운 뒤 새로 띄운다
+# 저장하지 않는 이유(--save "" --appendonly no): 락은 수 초짜리 임시 데이터. 재시작하면 락이 사라지는 게 맞다
+#   (그 순간 락이 뚫릴 수 있다 → DB 쪽 @Version 안전망이 잡는다, RedisGuardedBalanceChanger)
+# 인증 없음: 클러스터 안 전용(ClusterIP). 학습 단계 타협 → 백로그 NetworkPolicy에서 "core만 접근"으로 막는다
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.2.11   # 테스트(RedisTestcontainerConfiguration)와 같은 버전
+          args: ["--save", "", "--appendonly", "no", "--maxmemory", "200mb", "--maxmemory-policy", "noeviction"]
+          # noeviction: 메모리가 차면 오래된 키를 지우지 않고 쓰기를 거절한다. 락 키를 몰래 지우면 락이 뚫린다
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
