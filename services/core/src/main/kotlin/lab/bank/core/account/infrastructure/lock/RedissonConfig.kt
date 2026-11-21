@@ -1,4 +1,4 @@
-package lab.bank.core.posting.infrastructure
+package lab.bank.core.account.infrastructure.lock
 
 import org.redisson.Redisson
 import org.redisson.api.RedissonClient
@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 /**
- * Redis 분산 락용 클라이언트 (7주 차, REDIS 전략). 락을 감싸는 코드는 posting이 쓴다.
+ * Redis 분산 락용 클라이언트 (7주 차, REDIS 전략). account가 "트랜잭션 바깥 잠금"(AccountLocks)을 공개하고, posting은 트랜잭션을 그 안에서 연다.
  *
  * lazyInitialization: Redis에는 **처음 명령을 보낼 때** 붙는다. 이게 없으면 Redisson.create()가 앱 시작 때 바로 접속하고,
  * Redis가 없거나 죽어 있으면 core가 아예 안 뜬다. REDIS 전략을 안 쓰는데도 새 의존성이 기본 경로를 죽이는 셈이라 막는다

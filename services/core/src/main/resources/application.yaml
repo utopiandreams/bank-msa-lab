@@ -54,7 +54,7 @@ core:
   lock:
     strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS
     optimistic-max-attempts: 3    # 낙관적 락 충돌 시 트랜잭션 시도 횟수 (첫 시도 포함)
-  # REDIS 전략의 분산 락 저장소 (posting/infrastructure/RedissonConfig). 클러스터는 CORE_REDIS_ADDRESS로 덮어쓴다 (deploy/apps/core)
+  # REDIS 전략의 분산 락 저장소 (account/infrastructure/lock/RedissonConfig). 클러스터는 CORE_REDIS_ADDRESS로 덮어쓴다 (deploy/apps/core)
   # 처음 명령을 보낼 때 붙으므로(lazy) Redis가 없어도 앱은 뜬다
   redis:
     address: redis://localhost:6379

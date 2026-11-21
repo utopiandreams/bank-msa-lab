@@ -349,6 +349,6 @@ TOCTOU = Time-of-check to time-of-use.
   - 재현 (`RedisLockScopeTest`): 버전 검사 없이 덮어쓰면 출금 2건 성공에 잔액은 1건만 빠짐 (10,000 → 9,000). `@Version`이 있으면 늦은 커밋이 `OptimisticLockingFailureException`으로 거절된다 = 락이 뚫렸다는 신호
   - `@Transactional` 메서드 안에 락 코드를 넣으면 프록시 구조상 커밋은 메서드가 **끝난 뒤**에 일어난다 → `finally { unlock() }`도 커밋 전이다. 같은 실수
   - 락 저장소가 잠깐이라도 두 대가 되면(Deployment 롤링의 maxSurge) 같은 락을 둘이 잡는다 → 락 저장소는 StatefulSet replicas 1, 또는 합의 기반
-- **원칙:** 순서는 `락 → 트랜잭션 시작 → 변경 → 커밋 → 락 해제`. 락은 트랜잭션 경계를 쥔 쪽(우리는 `PostingUseCaseImpl`)이 감싼다. 분산 락이 뚫릴 때(TTL 만료, GC 멈춤, Redis 재시작)를 대비해 DB 쪽 안전망(`@Version`, 조건부 UPDATE)을 남긴다. 락이 제대로면 안전망은 한 번도 안 터진다 → 그 카운터가 락의 건강 지표
+- **원칙:** 순서는 `락 → 트랜잭션 시작 → 변경 → 커밋 → 락 해제`. 락은 트랜잭션 바깥에 둔다: 우리는 account가 감싸는 함수(`AccountLocks.around`)를 공개하고, 트랜잭션을 여는 `PostingUseCaseImpl`이 그 안에서 트랜잭션을 연다 (전략 판단은 account에, 위치는 posting이). 분산 락이 뚫릴 때(TTL 만료, GC 멈춤, Redis 재시작)를 대비해 DB 쪽 안전망(`@Version`, 조건부 UPDATE)을 남긴다. 락이 제대로면 안전망은 한 번도 안 터진다 → 그 카운터가 락의 건강 지표
 - 🎤 "분산 락을 트랜잭션과 같이 쓸 때 주의점은?" / "@Transactional 메서드 안에서 unlock하면 왜 안 되나요?" / "Redis 락이 만료됐는데 작업이 안 끝났으면?"
 - 📎 `RedisLockScopeTest`, `RedisGuardedBalanceChanger`, `deploy/platform/redis/redis.yaml`, pitfalls 33, `docs/learning/concurrency.md` 5번
