@@ -308,3 +308,11 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 두 시스템에 걸친 쓰기는 원자적으로 만들 수 없다. 할 수 있는 건 **순서를 정해 장애 결과를 고르는 것**: 되돌릴 수 없는 쪽(Kafka, 외부 은행)보다 **우리 DB에 먼저 확정**한다. Outbox의 최악은 "중복"(컨슈머 멱등으로 복구)이고, 커밋 전 전송의 최악은 "유령"(복구 불가)이다. outbox 행 = 이벤트판 의도 상태 (pitfalls 27과 같은 구조)
 - 🎤 "그냥 커밋 전에 보내면 안 되나요?" / "Outbox 릴레이도 원자적이지 않은데 왜 괜찮죠?" / "Kafka 트랜잭션(exactly-once)으로 DB와 묶을 수 있나요?" (Kafka 트랜잭션은 Kafka 안의 읽기-처리-쓰기만 묶는다. 외부 DB는 못 묶음)
 - 📎 `TransferEventPublisher` KDoc (계약 변경), `TransferEventLossTest`, pitfalls 27 (의도 상태 먼저), 29 (발행 타임아웃 ≠ 미발행)
+
+### 31. GitOps selfHeal은 손으로 일으킨 장애도 "어긋남"으로 보고 되돌린다
+
+- **장면 (2026-11-21, 6주 차 중복 수신 재현):** 컨슈머 오프셋을 되감으려면 컨슈머 그룹에 활성 멤버가 없어야 한다 → `kubectl scale deploy/notification --replicas=0`. 그런데 Argo CD 앱이 `selfHeal: true`이고 차트가 `replicas`를 관리해서, 몇 초 만에 다시 1로 되돌아간다. 자식 앱의 자동 동기화만 끄면 상위 앱(app-of-apps, 역시 selfHeal)이 자식 앱 설정을 다시 원래대로 덮는다.
+- **함정:** GitOps 환경에서 장애 대응이나 실험으로 손댄 것(스케일 다운, 설정 핫픽스, 파드 격리)이 **아무 경고 없이 원래대로 돌아간다.** 장애 중에 "분명히 줄였는데 왜 다시 떠 있지?"가 되고, 반대로 실험 뒤 되돌리는 걸 잊는 일은 없다
+- **원칙:** ① 손으로 바꿔야 하면 **상위 앱부터** 자동 동기화를 끄고 (app-of-apps면 root → 자식 순), 끝나면 root만 다시 켜면 나머지가 selfHeal로 복구된다 ② 오래 갈 변경은 Git에 커밋한다 (그게 GitOps) ③ 장애 주입은 Argo가 관리하지 않는 리소스로 한다 (Chaos Mesh의 PodChaos·NetworkChaos는 별도 CR이라 충돌 없음, 12주 차) ④ HPA처럼 replicas를 다른 주체가 바꾸면 차트에서 `replicas`를 빼거나 Argo `ignoreDifferences`로 제외한다
+- 🎤 "Argo CD 쓰는 환경에서 장애 때 급하게 kubectl로 고치면 어떻게 되나요?" / "selfHeal을 켜는 이유와 대가는?"
+- 📎 `deploy/argocd/root.yaml`, `deploy/argocd/apps/notification.yaml`, `deploy/helm/spring-service/templates/deployment.yaml` (`replicas`), `docs/experiments/week-06-outbox.md`
