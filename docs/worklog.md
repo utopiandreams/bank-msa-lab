@@ -363,6 +363,41 @@
 
 ---
 
+## 2026-11-21 (밤) ~ 22 (새벽) · 7주 차: 락 전략 6개와 실험 스위치, Redis 분산 락
+
+**한 일**
+- 락 전략 스위치 `core.lock.strategy`: NONE(재현) / OPTIMISTIC(@Version + 트랜잭션 밖 재시도·지터, 재시도 지표) / PESSIMISTIC(FOR UPDATE, ID 순 잠금) / ATOMIC_UPDATE(조건부 UPDATE) / REDIS(pub/sub) / REDIS_SPIN. 실행 중 변경은 관리 포트 `POST :8081/actuator/experiments` (업무 포트에선 404)
+- 테스트로 재현: NONE lost update(원장 8,000 / 잔액 9,000), 반대 순서 잠금 데드락. 핫 계좌(2,000원에 100원 × 40) PESSIMISTIC·ATOMIC·REDIS·REDIS_SPIN 정확히 20/20, OPTIMISTIC은 성공 20 / 충돌 실패 7 / 잔액 부족 13
+- Redis: Redisson 4.8.0 승인, 클러스터에 `redis-0`(StatefulSet, 저장 없음, noeviction). 처음 명령 때 접속(lazy)이라 Redis 없이도 core가 뜸
+- 락 범위 함정 재현 `RedisLockScopeTest`: 트랜잭션 안에서 unlock → NONE은 출금 2건 성공에 잔액 1건만, REDIS는 늦은 커밋이 버전 충돌. 감싸면 20건 전부 반영(락을 빼면 실패함을 확인)
+- REDIS 계열 posting 경로 테스트: 핫 계좌·A↔B 송금·취소+동시 입금 모두 **버전 충돌 재시도 0** (잠금 범위가 맞다는 증거). core 테스트 94개
+- 공부 자료 `docs/learning/concurrency.md` (판단 순서·전략별 대가·공정성·비교표), pitfalls 32·33(보강)·34
+
+**결정 (개발자)**
+- 전략은 지우지 않고 스위치로 비교, 관리 포트 API, k6는 클러스터 안 일회성 파드
+- 계좌 잠금은 account가 감싸는 함수(`AccountLocks`)로 내주고 트랜잭션은 posting이 그 안에서 연다 (전략 판단은 account, 위치는 posting)
+- 감싸는 순서 `재시도 { 중복 키 재시도 { 잠금 { 트랜잭션 } } }` (개발자 초안 그대로). 잠금 대기 상한 1초 → 503: transfer → core read-timeout 3초보다 짧게
+- 분담: 잠금 래퍼 뼈대는 개발자, 포기 로직·나머지 메서드·테스트는 Claude (개발자: "사용법 익히기라 Claude가")
+
+**배운 것 (대화)**
+- 원자적 UPDATE: WHERE 조건이 곧 동시성 처리(검사와 변경이 한 문장). 갈림길은 "판단에 필요한 정보가 그 행 안에 다 있나". RETURNING·실패 원인은 갈아탈 이유가 아님
+- 낙관적 락 = version을 묻는 조건부 UPDATE. 유일한 자리는 읽기와 쓰기가 다른 요청에 걸칠 때
+- 공정성: DB 행 잠금 대기열은 FIFO(비관·원자적), 낙관·스핀·RLock은 불공정. 공정성은 처리량을 대가로
+- 스핀 vs pub/sub: 둘 다 스레드는 블로킹, 차이는 넘겨받는 시점과 Redis 부하 (테스트 시간 기준 스핀이 2~4배 느림, 측정은 k6로)
+
+**버그·트러블슈팅**
+- Kotlin init에서 `changers.keys`가 생성자 파라미터를 가리킴 → `this.changers.keys`
+- Redisson `Config.lazyInitialization`은 Kotlin 속성으로 안 보임(세터가 Config를 반환) → `setLazyInitialization(true)`
+- 개발자 초안 `while(true) { if (tryLock) block() }`: 무한 루프·결과 버림 → tryLock 한 번 + 실패면 예외. 전략 확인이 없어 모든 전략에서 Redis를 탐 → REDIS 계열만
+
+**다음**
+- k6: core 배포 확인 → 시나리오(핫 계좌·분산 계좌, constant-arrival-rate) → 클러스터 안 k6 파드로 전략 6개 표(정합성·성공·실패 종류·TPS·p99·최대 지연·재시도·Redis 명령 수)
+- `docs/experiments/week-07-locks.md`, 7주 차 체크
+- 후속: 락 대기 503·재시도 소진 500을 transfer가 어떻게 분류하나, PESSIMISTIC lock_timeout
+- 개발자: `docs/learning/concurrency.md` 요약 (중요), 11/20 공부 자료 요약
+
+---
+
 ## 이력서 소재 (계속 갱신)
 
 > 아직 "결과 수치"가 있는 실험은 없다. Phase 2(6~8주 차)부터 재현 → 해결 → 전후 수치가 쌓인다.
@@ -408,6 +443,8 @@
 - Outbox 폴링 릴레이를 `FOR UPDATE SKIP LOCKED`로 다중 인스턴스에서 중복 전송 없이 병렬 처리, ack 확인 후에만 발행 표시해 "실패를 삼켜 다시 유실"되는 경로 차단
 - 컨슈머 오프셋 되감기로 중복 수신을 클러스터에서 재현, 이벤트 ID 유일 제약 기반 멱등 컨슈머가 재수신 5건을 모두 걸러 알림 중복 0 확인
 - 발행 타임아웃이 미발행이 아님(브로커가 늦게 기록)을 재현 중 발견해, at-least-once 전제와 eventId 고정(재시도 시 같은 ID)으로 설계
+- 락 전략 6가지(락 없음·낙관·비관·조건부 UPDATE·Redis pub/sub·스핀)를 실행 중 스위치로 바꿀 수 있게 구현, lost update·데드락을 테스트로 재현하고 핫 계좌에서 전략별 성공·실패 양상을 비교
+- Redis 분산 락을 트랜잭션 안에서 풀면 커밋 전 값이 읽혀 잔액이 깨짐을 재현, 잠금이 트랜잭션 바깥을 감싸도록 모듈 경계를 설계하고 DB 버전 검사를 안전망으로 남겨 "재시도 0"을 락 정상 동작의 지표로 사용
 
 **관측성**
 - Prometheus·Grafana(kube-prometheus-stack)를 GitOps로 구성하고 대시보드를 코드로 관리, 수집 대상은 PodMonitor 선언으로 자동 등록 (서비스·Kafka 컨슈머 랙·PostgreSQL)
