@@ -52,5 +52,11 @@ server:
 # 실행 중 변경: POST :8081/actuator/experiments {"lockStrategy": "..."} (재시작하면 여기 값으로 돌아온다)
 core:
   lock:
-    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE
+    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS
     optimistic-max-attempts: 3    # 낙관적 락 충돌 시 트랜잭션 시도 횟수 (첫 시도 포함)
+  # REDIS 전략의 분산 락 저장소 (posting/infrastructure/RedissonConfig). 클러스터는 CORE_REDIS_ADDRESS로 덮어쓴다 (deploy/apps/core)
+  # 처음 명령을 보낼 때 붙으므로(lazy) Redis가 없어도 앱은 뜬다
+  redis:
+    address: redis://localhost:6379
+    connect-timeout-ms: 1000      # 외부 호출 타임아웃 (Redisson 기본 10초는 송금 API에 너무 길다)
+    timeout-ms: 1000              # 명령 응답 대기 (기본 3초)

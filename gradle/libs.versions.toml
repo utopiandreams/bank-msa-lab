@@ -6,6 +6,7 @@ spring-cloud = "2025.1.4"    # Spring Boot 4.0.x ~ 4.1.x 지원 (start.spring.io
 junit = "6.0.3"            # Spring Boot 4.1.2가 관리하는 버전과 맞춤 (spring-boot-dependencies의 junit-jupiter.version)
 
 mockito-kotlin = "6.4.0"   # Spring Boot가 관리하지 않아서 직접 지정. Mockito를 Kotlin답게 (whenever, any(), doAnswer)
+redisson = "4.8.0"         # 2026-11-22 승인 (7주 차 Redis 분산 락). Boot가 관리하지 않음. 스타터 대신 코어만 (Boot 4 호환을 스타터에 기대지 않으려고)
 
 [libraries]
 spring-cloud-dependencies = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
@@ -13,6 +14,7 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
+redisson = { module = "org.redisson:redisson", version.ref = "redisson" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -7,5 +7,6 @@ package lab.bank.core.account.application.balance
  * OPTIMISTIC    @Version. 커밋 때 충돌을 감지하면 posting이 트랜잭션째 다시 시도
  * PESSIMISTIC   SELECT ... FOR UPDATE. 먼저 잡은 쪽이 끝날 때까지 기다린다
  * ATOMIC_UPDATE 조건부 UPDATE 한 문장 (balance = balance - :amount WHERE balance >= :amount). 앱으로 읽어 오지 않는다
+ * REDIS         Redis 분산 락(Redisson RLock)을 **트랜잭션 바깥**(posting)에서 잡는다. DB 쪽은 OPTIMISTIC과 같은 코드라 @Version이 안전망으로 남는다
  */
-enum class LockStrategy { NONE, OPTIMISTIC, PESSIMISTIC, ATOMIC_UPDATE }
+enum class LockStrategy { NONE, OPTIMISTIC, PESSIMISTIC, ATOMIC_UPDATE, REDIS }

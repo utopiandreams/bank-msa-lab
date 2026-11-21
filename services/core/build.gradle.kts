@@ -20,6 +20,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-flyway")   // 스키마를 SQL 파일로 버전 관리
 	runtimeOnly("org.flywaydb:flyway-database-postgresql")                   // Flyway 10+는 DB별 모듈이 분리됨
 	runtimeOnly("org.postgresql:postgresql")
+	implementation(libs.redisson)                                             // 7주 차 Redis 분산 락 (RLock). posting/infrastructure/RedissonConfig
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
