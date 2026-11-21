@@ -79,14 +79,14 @@ class TransferUseCaseImpl(
     }
 
     /**
-     * core 결과를 반영하고 커밋한다. 끝 상태로 **바뀌었으면** 커밋 뒤에 이벤트를 발행한다 (ADR-0003 결정 2).
+     * core 결과를 반영하고 커밋한다. 끝 상태로 **바뀌었으면** 같은 트랜잭션에서 이벤트를 outbox에 적는다 (ADR-0003 결정 2, 6주 차 Outbox).
      *
      * 여기가 "끝 상태로 바뀌는" 유일한 곳이다: PROCESSING → 끝 (처음 요청), UNKNOWN → 끝 (재요청으로 해소).
      * 재요청에 이미 끝난 송금을 돌려줄 때(replay의 COMPLETED/FAILED)는 여기를 안 지나므로 중복 발행이 없다.
      * UNKNOWN → UNKNOWN은 끝 상태가 아니라 발행하지 않는다.
      *
-     * 발행은 커밋 **뒤**, 트랜잭션 밖 (커밋 전에 보내면 롤백됐는데 "완료" 알림이 나가는 유령 이벤트가 생긴다).
-     * 대신 커밋과 발행 사이에 죽으면 유실 → 6주 차 Outbox.
+     * 상태 저장과 outbox INSERT가 함께 커밋되거나 함께 롤백된다 → 커밋과 발행 사이 유실도, 롤백됐는데 "완료" 알림이 나가는 유령 이벤트도 없다.
+     * Kafka 전송은 릴레이가 커밋 뒤에 한다. (이전: 커밋 뒤 트랜잭션 밖에서 바로 발행 → 그 사이에 죽으면 유실, TransferEventLossTest)
      */
     private fun applyResultInTransaction(transfer: Transfer, result: CoreTransferResult): Transfer {
         when (result) {
@@ -95,7 +95,6 @@ class TransferUseCaseImpl(
             is Unknown -> transfer.markUnknown()
         }
         val saved = saveInTransaction(transfer)
-        if (saved.status.isFinal) eventPublisher.publishFinished(saved)
         return saved
     }
 
@@ -106,6 +105,10 @@ class TransferUseCaseImpl(
         }
 
     private fun saveInTransaction(transfer: Transfer) =
-        transactionTemplate.execute { transferRepository.save(transfer) }
+        transactionTemplate.execute {
+            val saved = transferRepository.save(transfer)
+            if (saved.status.isFinal) eventPublisher.publishFinished(saved)
+            saved
+        }
 
 }

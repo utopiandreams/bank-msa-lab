@@ -134,9 +134,11 @@ class InterbankTransferUseCaseImpl(
     private fun start(transfer: InterbankTransfer): InterbankTransfer =
         save(transfer.apply { withdrawRequested() })
 
-    private fun save(transfer: InterbankTransfer): InterbankTransfer {
-        val saved = transactionTemplate.execute { repository.save(transfer) }
-        if (saved.status.isFinal()) transferEventPublisher.publishFinished(saved)
-        return saved
-    }
+    // 끝 상태면 같은 트랜잭션에서 이벤트를 outbox에 적는다 (상태 저장과 함께 커밋·롤백, 6주 차)
+    private fun save(transfer: InterbankTransfer): InterbankTransfer =
+        transactionTemplate.execute {
+            val saved = repository.save(transfer)
+            if (saved.status.isFinal()) transferEventPublisher.publishFinished(saved)
+            saved
+        }
 }
