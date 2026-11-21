@@ -288,3 +288,13 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 같은 테이블을 쓰는 엔티티는 **종류(구분 컬럼)로 읽기를 제한**하고, 키 충돌인데 같은 종류로 안 보이면 **다른 종류가 쓰는 키로 판정(소거법)**해 원인이 적힌 409로 돌려준다. PostgreSQL은 상대 행이 커밋된 뒤에만 UNIQUE 위반을 확정하므로 이 판정은 확실하다. JPA 단일 테이블 상속(`@DiscriminatorColumn`)도 같은 문제를 구분 컬럼으로 푼다.
 - 🎤 "공통 테이블 + 상세 테이블로 나눈 이유는요? 그 대가는?" / "멱등 키가 다른 종류의 요청에 재사용되면?"
 - 📎 `TransferJpaEntity`·`InterbankTransferJpaEntity`의 `@SQLRestriction`, `TransferUseCaseImpl`·`InterbankTransferUseCaseImpl`의 `DuplicateIdempotencyKeyException` 처리, `InterbankTransferControllerTest` "타행에 쓴 키로 당행 송금"
+
+### 29. 메시지 발행 타임아웃 ≠ 미발행: Kafka에도 결과 불명이 있다
+
+- **장면 (2026-11-21, 6주 차 유실 재현):** "커밋 뒤 발행 실패로 이벤트가 사라진다"를 재현하려고, 프로듀서가 연결된 뒤 Kafka 컨테이너를 일시정지(`docker pause`)했다. 프로듀서는 `delivery.timeout.ms`(5초) 뒤 콜백으로 **"발행 실패"**를 보고했는데, Kafka를 재개하자 그 메시지가 **토픽에 들어와 있었다** → 재현 실패
+- **함정:**
+  - 요청 바이트가 이미 소켓(커널 버퍼)으로 나갔으면, 브로커가 늦게라도 처리해 기록한다. 프로듀서의 타임아웃은 "응답을 못 받았다"일 뿐 "안 들어갔다"가 아니다. core 호출 타임아웃(pitfalls 6)과 같은 구조다
+  - 그래서 "실패라고 떴으니 다시 보내자"(Outbox 릴레이의 재시도)는 **같은 이벤트를 두 번** 보낼 수 있다. eventId를 보낼 때마다 새로 만들면 컨슈머가 둘을 다른 이벤트로 보고 알림이 두 번 간다
+- **원칙:** ① 발행은 "최소 한 번"으로 설계한다: Outbox + **컨슈머 멱등**은 짝이다 ② eventId는 **이벤트가 생길 때(outbox INSERT 때) 한 번** 정하고, 재시도해도 같은 값으로 보낸다 ③ 유실을 재현하려면 바이트가 아예 나가지 않는 장애를 만든다 (메타데이터를 받기 전에 브로커를 멈춰 `send()`가 `max.block.ms` 뒤 예외)
+- 🎤 "Kafka 프로듀서가 타임아웃 났으면 메시지는 안 들어간 건가요?" / "Outbox가 있으면 중복 발행은 없나요?" / "exactly-once는 어떻게 보장하나요?" (프로듀서 멱등은 한 프로듀서 세션 안의 재시도 중복만 막는다, 앱 재시작·릴레이 재시도는 못 막음 → 컨슈머 멱등)
+- 📎 `TransferEventLossTest` 주석, `KafkaTransferEventPublisher` (지금은 send 때 `UUID.randomUUID()`), notification `event_id` UNIQUE, pitfalls 6
