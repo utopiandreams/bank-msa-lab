@@ -21,7 +21,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, prometheus
+        include: health, info, prometheus, experiments   # experiments: 실험 스위치 (core.experiment.ExperimentsEndpoint)
   endpoint:
     health:
       probes:
@@ -47,3 +47,10 @@ server:
       enabled: true
     threads:
       max: 200   # 기본값과 같지만 명시 (pitfalls 13 보이지 않는 기본값). 이 선에 붙으면 대기열이 생긴다
+
+# 락 전략 (7주 차 실험 스위치, account/application/balance/LockProperties). 파드가 뜰 때의 기본값
+# 실행 중 변경: POST :8081/actuator/experiments {"lockStrategy": "..."} (재시작하면 여기 값으로 돌아온다)
+core:
+  lock:
+    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE
+    optimistic-max-attempts: 3    # 낙관적 락 충돌 시 트랜잭션 시도 횟수 (첫 시도 포함)

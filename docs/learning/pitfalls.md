@@ -316,3 +316,24 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** ① 손으로 바꿔야 하면 **상위 앱부터** 자동 동기화를 끄고 (app-of-apps면 root → 자식 순), 끝나면 root만 다시 켜면 나머지가 selfHeal로 복구된다 ② 오래 갈 변경은 Git에 커밋한다 (그게 GitOps) ③ 장애 주입은 Argo가 관리하지 않는 리소스로 한다 (Chaos Mesh의 PodChaos·NetworkChaos는 별도 CR이라 충돌 없음, 12주 차) ④ HPA처럼 replicas를 다른 주체가 바꾸면 차트에서 `replicas`를 빼거나 Argo `ignoreDifferences`로 제외한다
 - 🎤 "Argo CD 쓰는 환경에서 장애 때 급하게 kubectl로 고치면 어떻게 되나요?" / "selfHeal을 켜는 이유와 대가는?"
 - 📎 `deploy/argocd/root.yaml`, `deploy/argocd/apps/notification.yaml`, `deploy/helm/spring-service/templates/deployment.yaml` (`replicas`), `docs/experiments/week-06-outbox.md`
+
+### 32. 두 행을 잠그는 코드는 잠그는 순서를 하나로 정한다 (데드락)
+
+- **장면 (2026-11-21, 7주 차 비관적 락):** 당행 송금은 보내는 계좌와 받는 계좌 두 행을 바꾼다. A→B와 B→A가 동시에 오고 둘 다 "보내는 계좌부터" 잠그면, 각자 첫 행을 쥔 채 상대가 쥔 행을 기다린다. `LockStrategyConcurrencyTest`로 재현: PostgreSQL이 `deadlock_timeout`(1초) 뒤 원을 감지해 한쪽 트랜잭션을 죽인다 → 그 고객은 500
+- **함정:**
+  - `SELECT ... FOR UPDATE`만의 문제가 아니다. **조건부 UPDATE도 행 잠금**이라 두 행을 반대 순서로 UPDATE하면 똑같이 데드락. 낙관적 락도 커밋 때 flush하는 UPDATE 순서가 엇갈리면 생길 수 있다 (Hibernate `order_updates`로 PK 순 정렬)
+  - 부하가 낮으면 안 보이다가 트래픽이 몰리는 날 터진다
+- **원칙:** 여러 행을 잠그는 코드는 **항상 같은 순서**(ID 정렬)로 잠근다. 원(cycle)이 생길 수 없게 만드는 것이 감지·재시도보다 낫다. 기준은 아무거나 같기만 하면 된다 (자바 UUID 비교와 DB uuid 정렬은 다르지만 모든 파드가 같은 코드면 상관없음)
+- 🎤 "데드락은 어떻게 막나요?" / "DB가 데드락을 감지하면 무슨 일이 생기나요?" / "UPDATE만 쓰는데도 데드락이 날 수 있나요?"
+- 📎 `PessimisticBalanceChanger.transfer`, `AtomicUpdateBalanceChanger.transfer`, `LockStrategyConcurrencyTest` "재현 - 반대 순서로 잠그면 데드락"
+
+### 33. 읽고-계산하고-쓰기 대신 조건부 UPDATE 한 문장: 단순 증감은 락이 필요 없을 수 있다
+
+- **장면 (2026-11-21, 7주 차):** 잔액 차감은 "읽기(SELECT) → 앱에서 잔액 확인·계산 → 쓰기(UPDATE)"라 그 사이에 다른 트랜잭션이 끼면 lost update. 락 세 가지(낙관·비관·분산)를 비교하기 전에, 판단과 변경을 DB 한 문장으로 합치면 틈 자체가 없다: `UPDATE accounts SET balance = balance - :amt WHERE id = :id AND balance >= :amt`
+- **함정:**
+  - "락을 안 쓴다"가 아니다. UPDATE도 커밋까지 행 잠금을 쥔다. 동시에 오면 두 번째는 기다렸다가 **커밋된 최신 값으로 WHERE를 다시 평가**한다 (PostgreSQL READ COMMITTED). REPEATABLE READ에서는 재평가 대신 직렬화 오류로 실패한다 → 격리 수준에 따라 동작이 다르다
+  - JPA 벌크 업데이트는 영속성 컨텍스트를 거치지 않는다: 미리 읽어 둔 엔티티는 옛 값, `@Version`은 직접 올려야 함
+  - 업무 규칙(잔액 ≥ 금액)이 도메인과 SQL 두 곳에 생긴다. 실패 이유가 "0행"으로 뭉개져 조회를 한 번 더 해야 가린다
+- **원칙:** 단순한 증감·조건(재고 차감, 잔액 차감, 좌석 수)은 **조건부 UPDATE**가 가장 싸고 안전하다. 규칙이 복잡해지면(한도·여러 행 조합) 락 + 도메인 메서드. 분산 락은 DB 밖 자원을 묶을 때
+- 🎤 "재고 차감 동시성은 어떻게 처리하나요?" / "UPDATE ... WHERE stock > 0이 왜 안전한가요?" / "격리 수준에 따라 달라지나요?"
+- 📎 `AccountRepository.withdrawAtomically` 주석, `AtomicUpdateBalanceChanger`, pitfalls 32

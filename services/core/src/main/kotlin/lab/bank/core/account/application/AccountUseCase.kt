@@ -1,9 +1,12 @@
 package lab.bank.core.account.application
 
+import lab.bank.core.account.application.balance.AccountOwnership
+import lab.bank.core.account.application.balance.BalanceChanger
+import lab.bank.core.account.application.balance.LockStrategy
+import lab.bank.core.account.application.balance.LockStrategySwitch
 import lab.bank.core.account.domain.Account
 import lab.bank.core.account.domain.exception.AccountNotFoundException
 import lab.bank.core.account.infrastructure.AccountRepository
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import lab.bank.core.shared.Amount
@@ -24,58 +27,49 @@ interface AccountUseCase {
     fun transfer(requester: UserId, fromAccountId: UUID, toAccountId: UUID, amount: Amount, ledgerEntryId: UUID)
 }
 
+/**
+ * 잔액 변경은 지금 켜진 락 전략의 BalanceChanger에 맡긴다 (7주 차). 여기는 트랜잭션 경계(합류)와 전략 고르기만.
+ * 전략은 메서드가 불릴 때 한 번 읽는다 → 요청 하나는 처음부터 끝까지 한 전략으로 처리된다
+ */
 @Service
 class AccountUseCaseImpl(
     private val accountRepository: AccountRepository,   // 생성자 주입 (@Autowired 불필요)
+    private val lockSwitch: LockStrategySwitch,
+    changers: List<BalanceChanger>,                       // Spring이 BalanceChanger 구현 빈을 전부 모아 준다
 ) : AccountUseCase {
+
+    private val changers: Map<LockStrategy, BalanceChanger> = changers.associateBy { it.strategy }
+
+    init {
+        // 전략을 추가하고 구현을 빠뜨리면 앱이 뜨지 않게 한다 (실험 중에 스위치를 바꿨다가 그때 터지는 것보다 낫다)
+        val missing = LockStrategy.entries - this.changers.keys
+        check(missing.isEmpty()) { "구현이 없는 락 전략: $missing" }
+    }
+
+    private fun changer(): BalanceChanger = changers.getValue(lockSwitch.strategy)
 
     @Transactional
     override fun create(owner: UserId): Account =
         accountRepository.save(Account(ownerId = owner.value))
 
     @Transactional(readOnly = true)
-    override fun getOwned(accountId: UUID, requester: UserId): Account = owned(get(accountId), requester)
-
-    private fun get(accountId: UUID): Account =
-        accountRepository.findById(accountId).orElseThrow { AccountNotFoundException(accountId) }
-
-    /**
-     * 소유자 검사 (인가). 남의 계좌면 "없음"과 같은 예외를 던진다: 밖에서는 둘을 구분할 수 없어야
-     * 아무 ID나 넣어 보며 계좌 존재 여부를 알아내는 것(enumeration)을 막는다. 구분은 로그에만 남긴다 (보안 감사용).
-     * (docs/learning/pitfalls.md 1. BOLA, 2. 존재 여부 누출)
-     */
-    private fun owned(account: Account, requester: UserId): Account {
-        if (account.ownerId != requester.value) {
-            log.warn("계좌 소유자 불일치: account={}, requester={}", account.id, requester.value)
-            throw AccountNotFoundException(account.id)
-        }
-        return account
-    }
-
-    // save()를 부르지 않는다: 트랜잭션 안에서 조회한 엔티티라 커밋 때 더티 체킹으로 UPDATE된다
-    @Transactional
-    override fun deposit(accountId: UUID, amount: Amount, ledgerEntryId: UUID) {
-        get(accountId).deposit(amount, ledgerEntryId)
-    }
+    override fun getOwned(accountId: UUID, requester: UserId): Account =
+        AccountOwnership.require(accountRepository.findById(accountId).orElseThrow { AccountNotFoundException(accountId) }, requester)
 
     @Transactional
-    override fun withdraw(accountId: UUID, amount: Amount, ledgerEntryId: UUID) {
-        get(accountId).withdraw(amount, ledgerEntryId)
-    }
+    override fun deposit(accountId: UUID, amount: Amount, ledgerEntryId: UUID) =
+        changer().deposit(accountId, amount, ledgerEntryId)
 
     @Transactional
-    override fun withdrawOwned(requester: UserId, accountId: UUID, amount: Amount, ledgerEntryId: UUID) {
-        owned(get(accountId), requester).withdraw(amount, ledgerEntryId)
-    }
+    override fun withdraw(accountId: UUID, amount: Amount, ledgerEntryId: UUID) =
+        changer().withdraw(accountId, amount, ledgerEntryId, requester = null)
+
+    @Transactional
+    override fun withdrawOwned(requester: UserId, accountId: UUID, amount: Amount, ledgerEntryId: UUID) =
+        changer().withdraw(accountId, amount, ledgerEntryId, requester)
 
     // 소유자 검사와 출금이 같은 트랜잭션 안: 검사와 사용 사이에 틈이 없다 (TOCTOU 없음, pitfalls 9)
     @Transactional
-    override fun transfer(requester: UserId, fromAccountId: UUID, toAccountId: UUID, amount: Amount, ledgerEntryId: UUID) {
-        owned(get(fromAccountId), requester).withdraw(amount, ledgerEntryId)
-        get(toAccountId).deposit(amount, ledgerEntryId)
-    }
-
-    companion object {
-        private val log = LoggerFactory.getLogger(AccountUseCaseImpl::class.java)
-    }
+    override fun transfer(requester: UserId, fromAccountId: UUID, toAccountId: UUID, amount: Amount, ledgerEntryId: UUID) =
+        changer().transfer(requester, fromAccountId, toAccountId, amount, ledgerEntryId)
 }
