@@ -52,8 +52,11 @@ server:
 # 실행 중 변경: POST :8081/actuator/experiments {"lockStrategy": "..."} (재시작하면 여기 값으로 돌아온다)
 core:
   lock:
-    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS
+    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS | REDIS_SPIN
     optimistic-max-attempts: 3    # 낙관적 락 충돌 시 트랜잭션 시도 횟수 (첫 시도 포함)
+    redis:                        # REDIS·REDIS_SPIN 전략의 분산 락 (account/infrastructure/lock/RedisAccountLocks)
+      wait-time: 1s               # 못 잡으면 포기 → 503. transfer → core read-timeout(3초)보다 짧게
+      lease-time: 10s             # 잡은 뒤 자동 해제 (워치독 끔). 처리가 더 길면 @Version 안전망
   # REDIS 전략의 분산 락 저장소 (account/infrastructure/lock/RedissonConfig). 클러스터는 CORE_REDIS_ADDRESS로 덮어쓴다 (deploy/apps/core)
   # 처음 명령을 보낼 때 붙으므로(lazy) Redis가 없어도 앱은 뜬다
   redis:

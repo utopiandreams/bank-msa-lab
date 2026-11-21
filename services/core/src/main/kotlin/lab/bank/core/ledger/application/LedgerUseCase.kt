@@ -24,6 +24,12 @@ interface LedgerUseCase {
      */
     fun recordInterbankWithdrawCancel(originalKey: IdempotencyKey): RecordedCancel
 
+    /**
+     * 취소하면 잔액이 돌아갈 계좌 (원래 전표의 고객 예금 계좌). 원래 전표가 없거나 고객 계좌가 하나가 아니면 null.
+     * posting이 트랜잭션 **전에** 계좌 잠금 키를 알아내려고 쓴다 (REDIS 전략). 전표는 불변이라 트랜잭션 밖에서 읽어도 안전하다
+     */
+    fun findCancelTargetAccountId(originalKey: IdempotencyKey): UUID?
+
     // 상태 조회: 그 키로 커밋된 거래가 있으면 요약, 없으면 null
     fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary?
 }

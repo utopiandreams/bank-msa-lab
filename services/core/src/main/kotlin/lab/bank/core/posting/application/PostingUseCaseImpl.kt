@@ -8,6 +8,7 @@ import lab.bank.core.shared.Amount
 import lab.bank.core.shared.IdempotencyKey
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
+import lab.bank.core.account.application.AccountLocks
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.OptimisticLockingFailureException
@@ -24,6 +25,7 @@ import kotlin.random.Random
 @Service
 class PostingUseCaseImpl(
     private val transactionTemplate: TransactionTemplate,
+    private val accountLocks: AccountLocks,
     private val accountUseCase: AccountUseCase,
     private val ledgerUseCase: LedgerUseCase,
     // 낙관적 락 충돌 시 트랜잭션을 몇 번까지 시도하나 (첫 시도 포함, LockProperties와 같은 키). 모듈 경계상 account의 설정 클래스 대신 값만 받는다
@@ -37,21 +39,39 @@ class PostingUseCaseImpl(
         .register(meterRegistry)
 
     // 금액·멱등 키 검증은 여기 없다: Amount·IdempotencyKey 타입을 받았다는 것 자체가 이미 검증됐다는 뜻이다
+    // 겹치는 순서: 재시도 { 중복 키 재시도 { 계좌 잠금 { 트랜잭션 } } }
+    //   잠금이 트랜잭션 바깥 = 커밋이 끝난 뒤에 푼다 (pitfalls 34). 재시도마다 잠금을 다시 잡는다 = 지터로 자는 동안 남을 막지 않는다
+    //   잠금 대기 초과(AccountLockTimeoutException)는 재시도하지 않고 바로 503 (REDIS·REDIS_SPIN이 아니면 잠금은 그냥 통과)
     override fun deposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
-        retryOnOptimisticLock { retryOnceOnDuplicateKey { depositInTransaction(idempotencyKey, accountId, amount) } }
+        retryOnOptimisticLock {
+            retryOnceOnDuplicateKey {
+                accountLocks.getAccountLock(accountId) { depositInTransaction(idempotencyKey, accountId, amount) }
+            }
+        }
 
     override fun withdraw(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
-        retryOnOptimisticLock { retryOnceOnDuplicateKey { withdrawInTransaction(idempotencyKey, accountId, amount) } }
+        retryOnOptimisticLock {
+            retryOnceOnDuplicateKey {
+                accountLocks.getAccountLock(accountId) { withdrawInTransaction(idempotencyKey, accountId, amount) }
+            }
+        }
 
     override fun transfer(requester: UserId, idempotencyKey: IdempotencyKey, fromAccountId: UUID, toAccountId: UUID, amount: Amount): PostingResult {
         // 값 하나로는 알 수 없고 필드 두 개를 함께 봐야 하는 규칙이라 값 객체가 아니라 여기서 검사한다.
         // 트랜잭션·재시도보다 먼저: 잘못된 요청은 DB 커넥션을 잡기 전에 돌려보낸다
         if (fromAccountId == toAccountId) throw SameAccountTransferException(fromAccountId)
-        return retryOnOptimisticLock { retryOnceOnDuplicateKey { transferInTransaction(requester, idempotencyKey, fromAccountId, toAccountId, amount) } }
+        return retryOnOptimisticLock {
+            retryOnceOnDuplicateKey {
+                // 두 계좌 모두. 잡는 순서(ID 순)는 AccountLocks가 정한다 → A→B·B→A 동시 송금도 데드락 없음
+                accountLocks.getAccountLock(fromAccountId, toAccountId) {
+                    transferInTransaction(requester, idempotencyKey, fromAccountId, toAccountId, amount)
+                }
+            }
+        }
     }
 
     override fun interbankWithdraw(requester: UserId, idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =
-        retryOnOptimisticLock { retryOnceOnDuplicateKey {
+        retryOnOptimisticLock { retryOnceOnDuplicateKey { accountLocks.getAccountLock(accountId) {
             // 소유자 검사는 당행 송금과 같이 멱등 판정 뒤, 새로 처리할 때만 (pitfalls 17)
             transactionTemplate.execute {
                 val recorded = ledgerUseCase.recordInterbankWithdraw(idempotencyKey, accountId, amount)
@@ -60,10 +80,13 @@ class PostingUseCaseImpl(
                 }
                 PostingResult(recorded.entryId, recorded.replayed)
             }
-        } }
+        } } }
 
-    override fun cancelInterbankWithdraw(originalKey: IdempotencyKey): CancelResult =
-        retryOnOptimisticLock { retryOnceOnDuplicateKey {
+    override fun cancelInterbankWithdraw(originalKey: IdempotencyKey): CancelResult {
+        // 받는 건 원래 출금의 키뿐이라 잠글 계좌를 모른다 → 트랜잭션 전에 원장에서 먼저 읽는다 (전표는 불변이라 밖에서 읽어도 안전).
+        // 원래 전표가 없으면 잠글 것도 없다: 빈 채로 진행하면 트랜잭션 안에서 OriginalEntryNotFoundException으로 끝난다
+        val accountIds = listOfNotNull(ledgerUseCase.findCancelTargetAccountId(originalKey)).toTypedArray()
+        return retryOnOptimisticLock { retryOnceOnDuplicateKey { accountLocks.getAccountLock(*accountIds) {
             // 취소 전표와 잔액 복구가 한 트랜잭션. 이미 취소됐으면(replayed) 잔액을 다시 바꾸지 않는다
             transactionTemplate.execute {
                 val cancel = ledgerUseCase.recordInterbankWithdrawCancel(originalKey)
@@ -72,7 +95,8 @@ class PostingUseCaseImpl(
                 }
                 CancelResult(cancel.entryId, cancel.replayed, cancel.idempotencyKey)
             }
-        } }
+        } } }
+    }
 
     // 원장 기록과 잔액 변경이 한 트랜잭션: 둘 다 되거나 둘 다 안 된다
     private fun depositInTransaction(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): PostingResult =

@@ -51,6 +51,11 @@ class LedgerUseCaseImpl(
     }
 
     @Transactional(readOnly = true)
+    override fun findCancelTargetAccountId(originalKey: IdempotencyKey): UUID? =
+        journalEntryRepository.findByIdempotencyKey(originalKey.value)
+            ?.lines?.singleOrNull { it.ledgerAccount == LedgerAccount.CUSTOMER_DEPOSIT }?.accountId
+
+    @Transactional(readOnly = true)
     override fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary? =
         journalEntryRepository.findByIdempotencyKey(idempotencyKey.value)
             ?.let { EntrySummary(it.id, it.type.name, it.createdAt) }

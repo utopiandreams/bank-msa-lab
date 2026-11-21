@@ -7,6 +7,8 @@ package lab.bank.core.account.application.balance
  * OPTIMISTIC    @Version. 커밋 때 충돌을 감지하면 posting이 트랜잭션째 다시 시도
  * PESSIMISTIC   SELECT ... FOR UPDATE. 먼저 잡은 쪽이 끝날 때까지 기다린다
  * ATOMIC_UPDATE 조건부 UPDATE 한 문장 (balance = balance - :amount WHERE balance >= :amount). 앱으로 읽어 오지 않는다
- * REDIS         Redis 분산 락(Redisson RLock)을 **트랜잭션 바깥**(posting)에서 잡는다. DB 쪽은 OPTIMISTIC과 같은 코드라 @Version이 안전망으로 남는다
+ * REDIS         Redis 분산 락(Redisson RLock, pub/sub)을 **트랜잭션 바깥**에서 잡는다 (AccountLocks). 못 잡으면 잠들었다가 "풀렸다" 알림에 깬다
+ * REDIS_SPIN    같은 자리, 스핀 락. 못 잡으면 백오프하며 계속 다시 묻는다
+ *               둘 다 DB 쪽은 OPTIMISTIC과 같은 코드라 @Version이 안전망으로 남는다 (락이 제대로면 재시도 0)
  */
-enum class LockStrategy { NONE, OPTIMISTIC, PESSIMISTIC, ATOMIC_UPDATE, REDIS }
+enum class LockStrategy { NONE, OPTIMISTIC, PESSIMISTIC, ATOMIC_UPDATE, REDIS, REDIS_SPIN }

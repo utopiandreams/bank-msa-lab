@@ -25,3 +25,7 @@ class MissingUserException(reason: String) :
 // 잔액은 메시지에 넣지 않는다: 메시지는 로그·응답으로 퍼지기 쉽고, 잔액은 민감 정보다
 class InsufficientBalanceException(accountId: UUID, amount: Long) :
     AccountException("INSUFFICIENT_BALANCE", "잔고가 부족합니다: 계좌 $accountId, 요청 금액 ${amount}원")
+
+// 같은 계좌의 다른 거래가 잠금을 쥐고 있어 대기 상한 안에 못 잡았다 (REDIS 전략). 처리하지 않았음이 확실하다 → 503, 다시 시도하면 된다
+class AccountLockTimeoutException(accountId: UUID) :
+    AccountException("ACCOUNT_BUSY", "같은 계좌의 다른 거래를 처리 중입니다. 잠시 뒤 다시 시도하세요: $accountId")

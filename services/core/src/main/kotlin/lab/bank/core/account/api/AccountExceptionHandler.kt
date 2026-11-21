@@ -1,6 +1,7 @@
 package lab.bank.core.account.api
 
 import lab.bank.core.account.domain.exception.AccountException
+import lab.bank.core.account.domain.exception.AccountLockTimeoutException
 import lab.bank.core.account.domain.exception.AccountNotFoundException
 import lab.bank.core.account.domain.exception.InsufficientBalanceException
 import lab.bank.core.account.domain.exception.MissingUserException
@@ -21,6 +22,7 @@ class AccountExceptionHandler {
             is AccountNotFoundException -> HttpStatus.NOT_FOUND
             is InsufficientBalanceException -> HttpStatus.UNPROCESSABLE_CONTENT   // 요청 형식은 맞지만 업무 규칙상 불가 (422)
             is MissingUserException -> HttpStatus.UNAUTHORIZED
+            is AccountLockTimeoutException -> HttpStatus.SERVICE_UNAVAILABLE   // 처리 안 함이 확실, 잠시 뒤 재시도 (Retry-After는 후속)
         }
         return ProblemDetail.forStatusAndDetail(status, e.message ?: "").apply {
             setProperty("code", e.code)
