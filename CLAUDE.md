@@ -169,10 +169,12 @@
 - [ ] 8주: 타행 이체에 미정산 계정·타임아웃·결과 불명 추가, 상태 조회로 결과 불명 해소(해소 스케줄러), 일일 대사 배치 (+ 이자 일배치와 실시간 송금 경합 검토). 고객 멱등 키는 3-2주 T-2로 앞당김 (2026-11-14)
 
 ### Phase 3. 관측성 (9~11주)
+> 2026-11-24 개발자 결정: **배관(설치·연결·문맥 전파·대시보드·알림 규칙)은 Claude가 설계 퀴즈 없이 빠르게** 하고, 개발자의 시간은 **실무에서 모니터링을 어떻게 쓰나**(상황 → 신호 → 클릭 경로 → 판단)에 쓴다. 활용법은 `docs/learning/monitoring-playbook.md`에 장면마다 쌓는다. 주차마다 판독 연습(장애를 걸고 플레이북 순서대로)을 하나 이상 넣는다.
 - [ ] 9주: OpenTelemetry로 gateway → 서비스 → Kafka → 컨슈머까지 하나의 트레이스로 연결 (Tempo)
   - [x] 설치 (2026-11-23): Tempo · OTel Collector(잡음 필터) · 에이전트(공통 차트 init 컨테이너), Grafana 데이터 소스 (`docs/infra/README.md` 트레이싱)
   - [x] Outbox 잇기 (2026-11-24): 행에 `traceparent`(V7), 릴레이가 행마다 요청의 자식 구간 → 송금 한 건 = gateway부터 notification까지 한 트레이스 (pitfalls 39)
-  - [ ] 남음: 빈 릴레이 회차 트레이스 정리, 느린 송금 트레이스 읽기, 로그에 traceId
+  - [x] 잡음 정리 (2026-11-24): Collector 꼬리 기반 샘플링으로 릴레이 회차 트레이스(1초마다) 통째로 버림
+  - [ ] 남음: 판독 연습 1회 (bank-mock 지연 → 느린 송금 트레이스 읽기, 플레이북 1-1). 로그에 traceId는 10주 차 Loki와 함께로 이동
 - [ ] 10주: Prometheus·Loki·Grafana로 RED 지표, 컨슈머 랙, JVM 대시보드, 로그 ↔ 트레이스 연결
   - 2026-11-18 결정: **기본 스택만 앞당긴다** (노드 확장 전에). `kube-prometheus-stack`(Prometheus·Grafana, 노드·쿠버네티스 기본 대시보드) + Strimzi·CloudNativePG 대시보드 + etcd 지표 + 앱 지표(`micrometer-registry-prometheus`, 2026-11-18 승인: JVM·API별 지연·커넥션 풀). 이유: 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고, 같은 대시보드를 일찍부터 반복해 봐야 평소 모양이 눈에 익는다. 서비스별 RED 대시보드 설계, Loki·Tempo, SLO·알림은 10~11주 차 그대로
 - [ ] 11주: 송금 성공률·p99 SLO 정의, Alertmanager 알림
