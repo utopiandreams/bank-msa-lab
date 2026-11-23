@@ -26,6 +26,24 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      {{- if .Values.tracing.enabled }}
+      # 에이전트 jar만 공유 볼륨으로 복사하고 끝난다 (values.yaml tracing 주석)
+      initContainers:
+        - name: otel-agent
+          image: {{ .Values.tracing.agentImage | quote }}
+          command: ["cp", "/javaagent.jar", "/otel/javaagent.jar"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+          volumeMounts:
+            - name: otel-agent
+              mountPath: /otel
+      {{- end }}
       containers:
         - name: app
           image: "{{ required "image.repository가 필요합니다" .Values.image.repository }}:{{ required "image.tag가 필요합니다" .Values.image.tag }}"
@@ -40,6 +58,27 @@ spec:
             # 앱의 management.server.port를 차트 값으로 고정한다 (포트 번호의 기준은 차트 하나)
             - name: MANAGEMENT_SERVER_PORT
               value: {{ .Values.managementPort | quote }}
+            {{- if .Values.tracing.enabled }}
+            - name: JDK_JAVA_OPTIONS
+              value: "-javaagent:/otel/javaagent.jar"
+            - name: OTEL_SERVICE_NAME            # 트레이스 화면에서 구간마다 붙는 서비스 이름
+              value: {{ include "spring-service.name" . | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_TRACES_SAMPLER
+              value: {{ .Values.tracing.sampler | quote }}
+            - name: OTEL_METRICS_EXPORTER        # 지표는 Micrometer → Prometheus가 이미 한다 (중복 방지)
+              value: none
+            - name: OTEL_LOGS_EXPORTER           # 로그는 10주 차 Loki
+              value: none
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: OTEL_RESOURCE_ATTRIBUTES     # 어느 파드·어느 버전(이미지 태그)이 처리했나
+              value: "k8s.pod.name=$(POD_NAME),k8s.namespace.name={{ .Release.Namespace }},service.version={{ .Values.image.tag }}"
+            {{- end }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -88,6 +127,15 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp   # 내장 Tomcat이 임시 파일을 여기에 쓴다
+            {{- if .Values.tracing.enabled }}
+            - name: otel-agent
+              mountPath: /otel
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.tracing.enabled }}
+        - name: otel-agent
+          emptyDir: { sizeLimit: 64Mi }
+        {{- end }}

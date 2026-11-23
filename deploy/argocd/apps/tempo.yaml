@@ -1,0 +1,50 @@
+# 트레이스 저장소 Tempo (9주 차, 2026-11-23). 서비스 → OTel Collector → Tempo ← Grafana에서 조회.
+# AWS로 치면 X-Ray. 구성·결정은 docs/infra/README.md "트레이싱", 개념은 docs/learning/observability.md 5-0.
+#
+# 차트 저장소가 grafana → grafana-community로 옮겨졌다 (grafana/tempo는 2026-01 Tempo 2.9에서 멈춤).
+# 단일 바이너리 모드: 수신·저장·조회가 파드 하나. 운영형(분산 모드, S3)은 학습 범위 밖
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # Collector가 보낼 곳이라 Collector보다 먼저
+spec:
+  project: default
+  source:
+    repoURL: https://grafana-community.github.io/helm-charts
+    chart: tempo
+    targetRevision: 3.2.1   # Tempo 3.1.1
+    helm:
+      releaseName: tempo
+      valuesObject:
+        fullnameOverride: tempo   # Service 이름 tempo.monitoring (Collector·Grafana가 이 이름으로 찾는다)
+        tempo:
+          reportingEnabled: false   # 익명 사용 통계를 Grafana Labs로 보내지 않는다
+          # 보관 72시간: 실험은 몇 분~몇 시간 단위로 보고 끝난다. 길게 남길 장면은 trace ID를 실험 기록에 적는다.
+          # k6 부하 때는 초당 수백 건 × 구간 수십 개가 쌓이므로 디스크(10Gi)를 넘지 않게 짧게
+          retention: 72h
+          # 받는 길은 OTLP (Collector가 OTLP로 보낸다). 기본값의 Jaeger 수신기는 남는다:
+          # 차트의 Service 템플릿이 jaeger 설정을 전제해서 null로 지우면 렌더링이 깨진다 (포트 몇 개가 더 열릴 뿐)
+          receivers:
+            otlp:
+              protocols:
+                grpc: { endpoint: "0.0.0.0:4317" }
+                http: { endpoint: "0.0.0.0:4318" }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 1Gi }   # 조회 때 블록을 메모리에 올린다. 넘으면 OOMKilled → 실측 후 조정
+        persistence:
+          enabled: true           # 끄면 파드가 재시작할 때 트레이스가 다 사라진다
+          storageClassName: local-path
+          size: 10Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -21,6 +21,18 @@ metrics:
   enabled: true
   interval: ""          # 비우면 Prometheus 기본값(15s, deploy/argocd/apps/kube-prometheus-stack.yaml)
 
+# 분산 트레이싱 (9주 차, 2026-11-23): OpenTelemetry Java 에이전트를 붙여 HTTP·JDBC·Kafka·Redis 호출을 코드 수정 없이 기록한다.
+# 파드가 뜰 때 init 컨테이너가 에이전트 이미지에서 jar 하나만 공유 볼륨으로 복사 → 앱 이미지를 다시 빌드하지 않는다 (버전은 여기 한 곳).
+# 붙이는 옵션은 JDK_JAVA_OPTIONS: JAVA_TOOL_OPTIONS는 이미지가 힙 설정(MaxRAMPercentage)에 쓰고 있어 덮어쓰면 힙 설정이 사라진다.
+# 구간은 Collector(monitoring)로 보내고, Collector가 Tempo로 넘긴다 (deploy/argocd/apps/otel-collector.yaml)
+tracing:
+  enabled: true
+  agentImage: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:2.33.1   # 2026-10-26 (2주 넘게 검증된 버전)
+  endpoint: http://otel-collector.monitoring:4318   # OTLP/HTTP
+  # 학습 환경이라 전부 기록한다 (부모가 기록 중이면 따라감 = 한 요청의 구간이 중간에 끊기지 않음).
+  # 실무에서는 비율 샘플링이나 Collector의 꼬리 기반 샘플링(에러·느린 것만 남기기)으로 줄인다
+  sampler: parentbased_always_on
+
 # 컨테이너 환경변수 (이름: 값)
 env: {}
 
@@ -34,13 +46,16 @@ secretEnv: {}
 #   메모리는 빌려 쓸 수 없는 자원이라 request < limit(빌려 쓰는 구조)이면 노드가 빡빡할 때 먼저 쫓겨난다.
 #   transfer 200건/초 피크 433Mi 기준으로 "파드 하나는 200건/초까지". 그 이상은 메모리로 받지 않고
 #   거절(스레드 상한, 15주 차)·스케일 아웃(16주 차)으로 받는다
+# 2026-11-23: 512Mi → 640Mi. 트레이싱 에이전트가 힙 밖(메타스페이스·클래스·버퍼)에 수십 MB를 더 쓴다.
+#   512Mi의 75%가 힙이면 힙 밖은 128Mi뿐인데, 같은 날 7주 차 k6에서 core가 힙 밖 증가로 OOMKilled됐다(pitfalls 37).
+#   ⚠️ 7주 차 이전 실험 수치는 512Mi·에이전트 없음 조건 → 전후 비교 때 조건 차이를 적는다
 resources:
   requests:
     cpu: 100m
-    memory: 512Mi
+    memory: 640Mi
   limits:
     # 메모리만 건다. 넘으면 OOMKilled. 힙은 이미지의 MaxRAMPercentage=75로 이 값의 75%.
-    memory: 512Mi
+    memory: 640Mi
     # CPU limit은 일부러 걸지 않는다. JVM은 기동할 때 CPU를 몰아 쓰는데, limit이 있으면
     # 스로틀링으로 기동이 몇 배 느려지고 startupProbe에 걸려 재시작 루프에 빠지기 쉽다.
 

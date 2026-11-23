@@ -88,6 +88,16 @@ spec:
           # → 화면에서 고친 대시보드는 재시작하면 사라진다. 남길 것은 JSON으로 내보내 커밋한다
           persistence: { enabled: false }
           defaultDashboardsTimezone: browser
+
+          # 트레이스 저장소 (9주 차, deploy/argocd/apps/tempo.yaml). Explore에서 데이터 소스 Tempo → trace ID 또는 검색(TraceQL)
+          additionalDataSources:
+            - name: Tempo
+              uid: tempo
+              type: tempo
+              access: proxy
+              url: http://tempo.monitoring:3200
+              jsonData:
+                nodeGraph: { enabled: true }   # 트레이스 화면에 서비스 간 호출 그림
           testFramework: { enabled: false }   # `helm test`용 파드. Argo CD는 helm test를 돌리지 않는다
 
           ingress:
