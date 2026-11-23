@@ -217,6 +217,27 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
   - 다른 사람에게 공개(시연)는 Cloudflare Tunnel + Access로 따로 (CLAUDE.md 백로그). 원리: `docs/learning/tailscale-and-nat.md`
 - VM은 `on_boot = false`라서 호스트만 켜면 VM은 꺼진 채로 있다 → cluster-up.sh가 켠다.
 
+### 트레이싱 (9주 차, 2026-11-23)
+
+서비스(OTel Java 에이전트) → OTel Collector → Tempo ← Grafana (데이터 소스 Tempo). 개념·AWS 대응은 `docs/learning/observability.md` 5-0.
+
+| Argo CD 앱 / 위치 | 내용 | wave |
+| --- | --- | --- |
+| `tempo` | grafana-community 차트 3.2.1 (Tempo 3.1.1), 단일 바이너리, 보관 72h, PVC 10Gi(local-path), `monitoring` | 1 |
+| `otel-collector` | 차트 0.178.2 (Collector 0.163.2, `-k8s` 배포판), OTLP → memory_limiter → filter/noise → batch → Tempo | 1 |
+| 공통 차트 `tracing.*` | init 컨테이너가 에이전트 2.33.1 jar를 복사, `JDK_JAVA_OPTIONS=-javaagent`, 지표·로그 내보내기 끔, 샘플링 전부 | 앱 |
+| `kube-prometheus-stack` | Grafana `additionalDataSources`에 Tempo (uid `tempo`) | 0 |
+
+결정과 이유:
+- **에이전트는 init 컨테이너로**: 앱 이미지를 다시 빌드하지 않고 버전을 차트 한 곳에서. OTel Operator 자동 주입은 웹훅·인증서가 따라와 지금 규모엔 과함
+- **`JDK_JAVA_OPTIONS`로 붙인다**: `JAVA_TOOL_OPTIONS`는 이미지가 힙 설정(`MaxRAMPercentage=75`)에 쓰고 있어 덮어쓰면 힙 설정이 사라진다
+- **서비스 메모리 512Mi → 640Mi**: 에이전트를 붙이니 유휴 상태에서 core 454Mi·transfer 458Mi (전엔 361~385Mi). 7주 차 이전 실험 수치와 비교할 때 조건 차이를 적는다
+- **잡음 제거는 Collector에서**: 프로브(`/livez`·`/readyz`)·`/actuator/**`가 몇 초마다 트레이스를 만든다. 에이전트엔 경로 제외 설정이 없어 Collector `filter` 프로세서로 버린다
+- **Collector 값은 문자열 `values`**: `valuesObject`는 Argo CD가 `null`을 버려 기본값을 못 지운다 (pitfalls 38)
+- Collector 자체 지표 포트(8888)는 파드 IP에만 열려 port-forward로 안 닿는다 (확인할 땐 Tempo 쪽에서)
+- 확인: Grafana → Explore → Tempo → Search(Service Name) 또는 TraceQL. API: `kubectl -n monitoring port-forward svc/tempo 3200` → `/api/search?q={...}`, `/api/traces/<id>`
+- 첫 확인 (2026-11-23): gateway → transfer → core 송금 한 건이 span 39개 한 트레이스. Kafka 구간은 에이전트가 헤더(`traceparent`)로 이어 주지만, **Outbox에서 끊긴다** (요청 트레이스는 outbox INSERT로 끝, 릴레이가 새 트레이스로 발행 → notification은 릴레이 트레이스에 붙음). 해결은 9주 차 4단계
+
 ### 배포 구조 (GitOps)
 
 ```
