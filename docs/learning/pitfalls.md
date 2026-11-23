@@ -401,3 +401,11 @@ TOCTOU = Time-of-check to time-of-use.
 - 🎤 "Outbox 패턴을 쓰면 분산 트레이싱은 어떻게 되나요?" / "span link는 언제 쓰나요?"
 - 📎 `OutboxRelay.publishSpan`, `infrastructure/tracing/TraceParents.kt`, V7, `observability.md` 5-0
 
+
+### 39. 상태 이름을 "왜"로 지으면, 들어오는 길이 늘 때 이름이 거짓말을 한다
+
+- **장면 (2026-11-24, 8주 차 타행 해소 설계):** 보상(출금 취소) 의도 상태가 `EXTERNAL_BANK_REJECTED`였다. 해소 일꾼이 "외부에 아예 안 보낸 송금(`WITHDRAWN`)"도 출금 취소로 보내야 하는데, 그 송금은 외부가 거절한 적이 없다. 첫 대안 `EXTERNAL_BANK_FAILED`, `EXTERNAL_BANK_REQUEST_FAILED`도 같은 문제.
+- **함정:** 상태가 **원인·결과**를 담으면, 같은 다음 행동으로 가는 길이 늘어날 때마다 상태를 새로 만들거나(폭증) 틀린 이름을 쓰게 된다. 운영자는 이름을 믿고 엉뚱한 곳(외부 은행)부터 조사한다.
+- **원칙:** **원격 호출이 걸려 있는(진행 중) 상태는 행위로** 짓는다: `WITHDRAW_REQUESTED`, `EXTERNAL_BANK_REQUESTED`, `WITHDRAW_CANCEL_REQUESTED`. 해소 일꾼은 이름만 보고 다음 행동(확인 / 재시도)을 안다. **확정된 사실은 결과로** 짓는다: 끝 상태(`COMPLETED`·`FAILED`·`CANCELLED`)와 아무것도 걸려 있지 않은 중간 체크포인트(`WITHDRAWN` = 출금 확정, 외부엔 확실히 안 보냄). "왜"는 상태가 아니라 데이터(실패 사유 칸)에.
+- 🎤 "상태 머신의 상태 이름은 어떻게 짓나요?" / "상태가 계속 늘어나는 문제는 어떻게 막나요?"
+- 📎 `docs/design-drills/08-unknown-resolution.md` 2부 결정 3, pitfalls 27(원격 호출마다 의도 상태 하나)
