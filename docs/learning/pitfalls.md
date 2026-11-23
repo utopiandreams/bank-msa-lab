@@ -352,3 +352,11 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 순서는 `락 → 트랜잭션 시작 → 변경 → 커밋 → 락 해제`. 락은 트랜잭션 바깥에 둔다: 우리는 account가 감싸는 함수(`AccountLocks.around`)를 공개하고, 트랜잭션을 여는 `PostingUseCaseImpl`이 그 안에서 트랜잭션을 연다 (전략 판단은 account에, 위치는 posting이). 분산 락이 뚫릴 때(TTL 만료, GC 멈춤, Redis 재시작)를 대비해 DB 쪽 안전망(`@Version`, 조건부 UPDATE)을 남긴다. 락이 제대로면 안전망은 한 번도 안 터진다 → 그 카운터가 락의 건강 지표
 - 🎤 "분산 락을 트랜잭션과 같이 쓸 때 주의점은?" / "@Transactional 메서드 안에서 unlock하면 왜 안 되나요?" / "Redis 락이 만료됐는데 작업이 안 끝났으면?"
 - 📎 `RedisLockScopeTest`, `RedisGuardedBalanceChanger`, `deploy/platform/redis/redis.yaml`, pitfalls 33, `docs/learning/concurrency.md` 5번
+
+### 35. 원격 접속할 집 대역이 흔한 사설 대역이면, 밖의 LAN과 겹쳐서 못 들어간다
+
+- **장면 (2026-11-23):** Tailscale 서브넷 라우터로 집 `172.30.1.0/24`를 광고했다. 집 안에서 맥북 라우팅 테이블을 보니 `172.30.1/24`가 `en0`(와이파이)과 `utun6`(Tailscale) 두 줄이었고, `en0`가 이겼다.
+- **함정:** "지금 붙은 LAN이 이긴다"는 규칙 때문에, 밖에서 붙은 네트워크도 `172.30.1.0/24`이면 (KT 공유기 기본 대역이라 카페·친구 집에서 흔하다) 그쪽 LAN으로 가 버려 집에 못 들어간다. 증상이 "Tailscale은 연결됨인데 클러스터만 타임아웃"이라 원인 찾기가 어렵다. 회사 VPN에서 사내 대역과 집 대역(`192.168.0.0/24` 등)이 겹치는 장애와 같은 모양이다.
+- **원칙:** 원격으로 들어가야 할 망은 처음부터 흔하지 않은 대역(예: `10.87.0.0/24`)으로 잡는다. 이미 늦었으면 ① 겹치는 곳에서는 `100.x` 주소로 노트북에 붙어 점프 ② Tailscale 4via6(같은 대역을 다른 주소로 노출) ③ 집 대역 변경(큰 공사: MetalLB 풀, nip.io 주소, 노드 IP 전부 바뀜).
+- 🎤 "VPN은 붙었는데 특정 서버만 안 될 때 무엇부터 보나요?" → 라우팅 테이블(`route get <IP>`)에서 어느 인터페이스로 나가는지
+- 📎 `docs/learning/tailscale-and-nat.md` 4절
