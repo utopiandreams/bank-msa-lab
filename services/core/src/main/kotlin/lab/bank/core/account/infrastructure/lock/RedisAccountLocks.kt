@@ -7,6 +7,7 @@ import lab.bank.core.account.application.balance.LockStrategySwitch
 import lab.bank.core.account.domain.exception.AccountLockTimeoutException
 import org.redisson.api.RLock
 import org.redisson.api.RedissonClient
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -36,8 +37,22 @@ class RedisAccountLocks(
             acquireAll(strategy, accountIds.distinct().sorted(), held)
             return block()   // 이 안에서 트랜잭션이 열리고 **커밋까지** 끝난다. 그 뒤에야 아래 finally에서 푼다
         } finally {
-            // 잡은 반대 순서로 푼다. 리스 시간이 지나 이미 풀렸으면(처리가 너무 길었음) 내 락이 아니다 → 건드리지 않는다
-            held.asReversed().forEach { if (it.isHeldByCurrentThread) it.unlock() }
+            held.asReversed().forEach(::release)   // 잡은 반대 순서로 푼다
+        }
+    }
+
+    /**
+     * 확인 없이 바로 풀고, "내 락이 아니다"는 예외로 받는다 (2026-11-23 변경, 전엔 isHeldByCurrentThread로 먼저 확인).
+     * - 확인은 HEXISTS 왕복 1번 = 락 한 번 왕복 4번 중 1번 (docs/learning/io-and-event-loop.md 8절)
+     * - 확인과 풀기 사이에도 리스가 끝날 수 있어서(TOCTOU) 확인이 이 경우를 막아 주지도 못했다
+     * - 내 락이 아닐 때 Redisson unlock은 아무것도 지우지 않고 IllegalMonitorStateException만 던진다 (Lua가 hexists로 주인을 본다)
+     * 리스가 끝났다 = 처리가 lease-time(10초)보다 길었다는 뜻. 그 사이 다른 요청이 들어왔을 수 있어 @Version 안전망이 막는다 → 경고로 남긴다
+     */
+    private fun release(lock: RLock) {
+        try {
+            lock.unlock()
+        } catch (e: IllegalMonitorStateException) {
+            log.warn("락 리스가 이미 끝나 있었음 (처리가 lease-time보다 김): {}", lock.name)
         }
     }
 
@@ -68,5 +83,6 @@ class RedisAccountLocks(
 
     companion object {
         private const val PREFIX = "lock:account:"
+        private val log = LoggerFactory.getLogger(RedisAccountLocks::class.java)
     }
 }

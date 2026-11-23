@@ -117,6 +117,32 @@ class RedisAccountLocksTest {
         assertFalse(lockKeyExists(first), "첫 번째를 쥔 채 남으면 그 계좌는 리스 시간(10초) 동안 아무도 못 쓴다")
     }
 
+    @ParameterizedTest
+    @EnumSource(value = LockStrategy::class, names = ["REDIS", "REDIS_SPIN"])
+    fun `처리 중 리스가 끝나 남이 잡았으면 - 결과는 그대로 돌려주고 남의 락은 건드리지 않는다`(strategy: LockStrategy) {
+        val accountId = UUID.randomUUID()
+        lockSwitch.change(strategy)
+        val othersHolding = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        val result = accountLocks.getAccountLock(accountId) {
+            redisson.keys.delete(key(accountId))   // 리스 만료를 흉내: 처리가 lease-time보다 길어 키가 사라졌다
+            executor.submit {                       // 그 틈에 다른 요청이 같은 계좌 락을 잡는다
+                val other = lockOf(strategy, accountId)
+                other.lock()
+                othersHolding.countDown()
+                release.await(10, TimeUnit.SECONDS)
+                other.unlock()
+            }
+            othersHolding.await(5, TimeUnit.SECONDS)
+            "처리 결과"
+        }
+
+        assertTrue(result == "처리 결과", "내 락이 아니어서 못 푼 것은 업무 실패가 아니다")
+        assertTrue(lockKeyExists(accountId), "남의 락을 지우면 그 사이 세 번째 요청이 들어와 동시에 처리된다")
+        release.countDown()
+    }
+
     @Test
     fun `block이 예외를 던져도 락은 풀린다`() {
         val accountId = UUID.randomUUID()
