@@ -73,11 +73,11 @@ class OutboxRelay(
     }
 
     /**
-     * 행 하나의 발행 구간 (9주 차). 부모 = 이 행을 만든 요청(행에 적힌 traceparent), 링크 = 이번 릴레이 회차.
+     * 행 하나의 발행 구간 (9주 차). 부모 = 이 행을 만든 요청(행에 적힌 traceparent).
      *
      * 왜 회차 전체가 아니라 행마다인가: 구간의 부모는 하나뿐이다. 한 회차는 여러 송금의 행을 묶어 가져오므로
      * 회차 구간(`OutboxRelay.relay`)은 어느 한 요청의 자식이 될 수 없다 → 회차는 자기 trace로 두고, 행마다 자식을 만든다.
-     * 회차와의 관계는 링크(부모는 아니지만 "같이 처리됨")로만 남긴다.
+     * 회차 트레이스는 Collector가 통째로 버린다(1초마다 대부분 0건인 잡음). 그래서 회차로의 링크도 걸지 않는다 (끊긴 링크가 된다)
      *
      * 결과: 요청 trace = gateway → transfer → core → outbox INSERT ··(대기)·· outbox publish → Kafka → notification
      * 대기 시간(INSERT → 발행)은 구간 사이 빈칸으로도 보이고, 속성 outbox.wait_ms로도 남긴다 (13주 차 체류 시간 지표의 단서)
@@ -86,7 +86,6 @@ class OutboxRelay(
         val parent = TraceParents.toContext(event.traceParent)
         return tracer.spanBuilder("outbox publish")
             .setParent(parent)                       // 행에 문맥이 없으면 부모 없는 문맥 → 새 trace
-            .addLink(Span.current().spanContext)     // 지금 도는 릴레이 회차 (에이전트가 @Scheduled에 만든 구간). 유효하지 않으면 무시됨
             .setAttribute("outbox.event_id", event.id.toString())
             .setAttribute("outbox.aggregate_id", event.aggregateId.toString())
             .setAttribute("outbox.wait_ms", Duration.between(event.createdAt, Instant.now()).toMillis())
