@@ -71,7 +71,7 @@ class LockStrategyConcurrencyTest {
 
     @AfterEach
     fun resetSwitch() {
-        lockSwitch.change(LockStrategy.OPTIMISTIC)
+        lockSwitch.reset()
     }
 
     /** 다음 두 번의 계좌 조회(findById)가 서로를 기다리게 한다 → 두 트랜잭션이 **같은 잔액을 읽은 뒤에야** 쓰기로 넘어간다 */

@@ -78,7 +78,7 @@ class RedisLockScopeTest {
     @AfterEach
     fun tearDown() {
         executor.shutdownNow()
-        lockSwitch.change(LockStrategy.OPTIMISTIC)
+        lockSwitch.reset()
     }
 
     private fun <T> Future<T>.result(): Result<T> = try {

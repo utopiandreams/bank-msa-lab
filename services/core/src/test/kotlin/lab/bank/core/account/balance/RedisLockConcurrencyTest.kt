@@ -57,7 +57,7 @@ class RedisLockConcurrencyTest {
 
     @AfterEach
     fun resetSwitch() {
-        lockSwitch.change(LockStrategy.OPTIMISTIC)
+        lockSwitch.reset()
     }
 
     private fun <T> runConcurrently(count: Int, task: (Int) -> T): List<Result<T>> {

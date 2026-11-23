@@ -52,7 +52,9 @@ server:
 # 실행 중 변경: POST :8081/actuator/experiments {"lockStrategy": "..."} (재시작하면 여기 값으로 돌아온다)
 core:
   lock:
-    strategy: OPTIMISTIC          # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS | REDIS_SPIN
+    # 기본값 ATOMIC_UPDATE (2026-11-23 개발자 결정, docs/experiments/week-07-locks.md): 지금 규칙(잔액 ≥ 금액, 소유자)은 전부 행 하나 안의 조건.
+    # 핫 계좌 500건/초에서도 p99 7ms·실패 0. 행 밖 정보가 필요한 규칙(일일 이체 한도 등)이 생기면 그 작업만 비관적 락으로
+    strategy: ATOMIC_UPDATE       # NONE | OPTIMISTIC | PESSIMISTIC | ATOMIC_UPDATE | REDIS | REDIS_SPIN
     optimistic-max-attempts: 3    # 낙관적 락 충돌 시 트랜잭션 시도 횟수 (첫 시도 포함)
     redis:                        # REDIS·REDIS_SPIN 전략의 분산 락 (account/infrastructure/lock/RedisAccountLocks)
       wait-time: 1s               # 못 잡으면 포기 → 503. transfer → core read-timeout(3초)보다 짧게

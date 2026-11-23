@@ -38,7 +38,7 @@ class RedisAccountLocksTest {
     @AfterEach
     fun tearDown() {
         executor.shutdownNow()
-        lockSwitch.change(LockStrategy.OPTIMISTIC)
+        lockSwitch.reset()
     }
 
     private fun key(accountId: UUID) = "lock:account:$accountId"

@@ -34,7 +34,7 @@ class ExperimentsEndpointTest {
 
     @AfterEach
     fun reset() {
-        lockSwitch.change(LockStrategy.OPTIMISTIC)
+        lockSwitch.reset()
     }
 
     @Test
@@ -45,9 +45,9 @@ class ExperimentsEndpointTest {
         val changed = client.post().uri(url).contentType(MediaType.APPLICATION_JSON)
             .body("""{"lockStrategy":"PESSIMISTIC"}""").retrieve().body(Map::class.java)!!
 
-        assertEquals("OPTIMISTIC", before["lockStrategy"])
+        assertEquals("ATOMIC_UPDATE", before["lockStrategy"])   // 기본값 (application.yaml, 2026-11-23 결정)
         assertEquals("PESSIMISTIC", changed["lockStrategy"])
-        assertEquals("OPTIMISTIC", changed["previous"])
+        assertEquals("ATOMIC_UPDATE", changed["previous"])
         assertEquals(LockStrategy.PESSIMISTIC, lockSwitch.strategy)
     }
 
@@ -58,7 +58,7 @@ class ExperimentsEndpointTest {
             .exchange { _, response -> response.statusCode }
 
         assertEquals(HttpStatusCode.valueOf(400), status)
-        assertEquals(LockStrategy.OPTIMISTIC, lockSwitch.strategy)
+        assertEquals(LockStrategy.ATOMIC_UPDATE, lockSwitch.strategy)
     }
 
     @Test

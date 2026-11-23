@@ -18,10 +18,16 @@ import java.util.concurrent.atomic.AtomicReference
 @Component
 class LockStrategySwitch(properties: LockProperties) {
 
-    private val current = AtomicReference(properties.strategy)
+    /** 파드가 뜰 때의 값 (core.lock.strategy). 실험이 끝나면 여기로 되돌린다 */
+    val default: LockStrategy = properties.strategy
+
+    private val current = AtomicReference(default)
 
     val strategy: LockStrategy get() = current.get()
 
     /** 바꾸고 이전 값을 돌려준다 */
     fun change(to: LockStrategy): LockStrategy = current.getAndSet(to)
+
+    /** 기본값으로 되돌리고 이전 값을 돌려준다 */
+    fun reset(): LockStrategy = change(default)
 }
