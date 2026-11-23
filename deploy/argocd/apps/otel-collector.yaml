@@ -47,6 +47,27 @@ spec:
                 traces:
                   span:
                     - 'IsMatch(attributes["url.path"], "^/(livez|readyz|actuator)(/.*)?$")'
+              # 트레이스 통째로 고르기 (2026-11-24): 위 filter는 구간 하나씩만 보지만, tail_sampling은 한 트레이스의 구간을
+              # decision_wait 동안 모았다가 트레이스 단위로 남길지 정한다 (= 꼬리 기반 샘플링. 운영에선 "에러·느린 것은 꼭 남기기"에 쓴다)
+              # 지금 쓰는 정책은 하나: Outbox 릴레이 회차(1초마다, 대부분 0건)를 통째로 버린다.
+              # 발행 구간은 회차가 아니라 원래 요청 트레이스에 붙으므로(pitfalls 39) 회차 트레이스에는 SELECT·UPDATE만 남아 볼 게 없다.
+              # 구간 단위 filter로 회차 구간만 지우면 자식 SELECT가 부모 잃은 트레이스로 남아서 tail_sampling을 쓴다.
+              # 전제: 한 트레이스의 구간이 모두 같은 Collector로 와야 한다 (지금 1대. 여러 대면 앞에 trace ID 기준 load-balancing exporter)
+              tail_sampling:
+                decision_wait: 10s   # 요청 트레이스는 Outbox 대기(~1초)까지 끝나야 다 모인다. 늦게 온 구간은 따로 판정돼 남는다
+                policies:
+                  - name: drop-outbox-relay-rounds
+                    type: drop          # drop은 다른 정책보다 우선한다
+                    drop:
+                      drop_sub_policy:
+                        - name: relay-round
+                          type: ottl_condition
+                          ottl_condition:
+                            error_mode: ignore
+                            span:
+                              - 'name == "OutboxRelay.relay"'
+                  - name: keep-everything-else
+                    type: always_sample   # 학습 환경이라 나머지는 전부 남긴다
             exporters:
               debug: null
               otlp/tempo:
@@ -56,7 +77,7 @@ spec:
               pipelines:
                 traces:
                   receivers: [otlp]
-                  processors: [memory_limiter, filter/noise, batch]   # 메모리 상한 먼저 → 잡음 버리기 → 묶어 보내기
+                  processors: [memory_limiter, filter/noise, tail_sampling, batch]   # 메모리 상한 → 잡음 구간 → 잡음 트레이스 → 묶어 보내기
                   exporters: [otlp/tempo]
                 metrics: null   # 지표는 Prometheus가 앱에서 직접 긁는다 (Micrometer)
                 logs: null      # 로그는 10주 차 Loki
