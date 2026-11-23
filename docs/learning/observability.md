@@ -217,6 +217,19 @@
   | **OTel Collector** | 서비스들이 보낸 구간을 받아 모으고(배치·샘플링) 저장소로 넘긴다. 앱이 저장소를 몰라도 되게 하는 중간층 | 집하장 |
   | **Tempo** | 트레이스 저장소. Grafana에서 trace ID로 조회 | 배송 기록 창고 |
 
+- 💡 **AWS에서는** (2026-11-23 개발자 질문: "나중에 AWS를 쓰면 어디서 보나"):
+
+  | 우리 구성 | AWS 관리형 | 콘솔에서 보는 곳 |
+  | --- | --- | --- |
+  | Prometheus | Amazon Managed Service for Prometheus (AMP) | 쿼리는 Managed Grafana. AWS 자원 지표는 CloudWatch Metrics |
+  | Grafana | Amazon Managed Grafana | 워크스페이스 |
+  | Tempo | AWS X-Ray | CloudWatch → X-Ray traces · Trace Map · Transaction Search |
+  | OTel Collector | ADOT Collector (AWS Distro for OpenTelemetry) / CloudWatch Agent | EKS 애드온 |
+  | Java 에이전트 | ADOT Java 에이전트 (OTel 에이전트의 AWS 배포판) | 같은 `-javaagent` |
+  | Loki (10주 차) | CloudWatch Logs | CloudWatch → Logs Insights |
+  | 묶음(RED·SLO) | CloudWatch Application Signals | CloudWatch → Application Signals |
+
+  **OpenTelemetry가 공통어**라서 저장소를 Tempo → X-Ray(또는 Datadog·New Relic)로 바꿔도 앱은 그대로, Collector의 보내는 곳(exporter)만 바꾼다 = Collector를 중간에 두는 이유. 🎤 "벤더 종속 없이 관측성을 구성하려면?"
 - 💡 에이전트는 **같은 처리 흐름 안에서** 송장을 넘긴다. Outbox처럼 요청 스레드는 INSERT만 하고 다른 스레드(릴레이)가 나중에 발행하면? → 9주 차 4단계의 질문
 - 🎤 "지표와 트레이스는 각각 무엇을 답하나요?" / "분산 트레이싱에서 trace ID는 서비스 사이에 어떻게 전달되나요?" / "코드 수정 없이 어떻게 트레이스가 생기나요?"
 - 📎 9주 차 실험 기록(예정), CLAUDE.md 2장 아키텍처 그림
