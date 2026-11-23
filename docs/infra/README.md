@@ -236,7 +236,9 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 - **Collector 값은 문자열 `values`**: `valuesObject`는 Argo CD가 `null`을 버려 기본값을 못 지운다 (pitfalls 38)
 - Collector 자체 지표 포트(8888)는 파드 IP에만 열려 port-forward로 안 닿는다 (확인할 땐 Tempo 쪽에서)
 - 확인: Grafana → Explore → Tempo → Search(Service Name) 또는 TraceQL. API: `kubectl -n monitoring port-forward svc/tempo 3200` → `/api/search?q={...}`, `/api/traces/<id>`
-- 첫 확인 (2026-11-23): gateway → transfer → core 송금 한 건이 span 39개 한 트레이스. Kafka 구간은 에이전트가 헤더(`traceparent`)로 이어 주지만, **Outbox에서 끊긴다** (요청 트레이스는 outbox INSERT로 끝, 릴레이가 새 트레이스로 발행 → notification은 릴레이 트레이스에 붙음). 해결은 9주 차 4단계
+- 첫 확인 (2026-11-23): gateway → transfer → core 송금 한 건이 span 39개 한 트레이스. Kafka 구간은 에이전트가 헤더(`traceparent`)로 이어 주지만, **Outbox에서 끊긴다** (요청 트레이스는 outbox INSERT로 끝, 릴레이가 새 트레이스로 발행 → notification은 릴레이 트레이스에 붙음). 해결은 아래
+- **Outbox 트레이스 잇기 (2026-11-24, pitfalls 39):** outbox 행에 W3C `traceparent`(V7 `trace_parent`)를 적고, 릴레이가 행마다 `outbox publish` 구간을 그 요청의 자식으로 만든 뒤 그 아래에서 Kafka로 보낸다 (회차 구간 `OutboxRelay.relay`는 링크로만). 앱은 `opentelemetry-api`만 의존하고 실제 동작은 에이전트가 이어 준다 (에이전트 2.33.1은 API 1.65까지, Boot 관리 버전 1.62). 확인: 송금 한 건 = span 51개 한 트레이스, gateway → core → outbox INSERT ··951ms·· outbox publish → Kafka → notification INSERT/UPDATE. 대기 시간은 속성 `outbox.wait_ms`
+- 남은 잡음: 행이 0건인 릴레이 회차도 1초마다 `OutboxRelay.relay` 트레이스를 만든다 (다음 단계에서 정리)
 
 ### 배포 구조 (GitOps)
 

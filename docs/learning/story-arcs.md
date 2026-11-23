@@ -77,3 +77,15 @@
 - 노드 확장 · WOL이 BIOS에서 막힘 ("꺼진 상태에서 켜 보기"가 완료 조건)
 - 2026-11-23 · Tailscale 서브넷 라우터, WOL은 L2라 노트북이 대신 (`tailscale-and-nat.md`, pitfalls 35)
 - ⏳ 컨트롤 플레인 HA, Cloudflare Tunnel 공개
+
+## 7. 보이게 만들기: 요청 한 건을 끝까지 따라가기
+
+질문: 지표로는 "나쁘다"만 안다. 이 요청 한 건은 어디서 시간을 썼고, 어디서 길을 잃었나?
+
+- 7주 · OOM 판독은 전부 지표로 (`observability.md` 7-5)
+- 9주 · 트레이싱 부품: 에이전트(송장)·Collector(집하장)·Tempo(창고), AWS·Datadog 대응 (`observability.md` 5-0)
+- 9주 · Outbox에서 트레이스가 끊김 → traceparent를 행에 저장, 묶음은 부모가 될 수 없어 행마다 자식 (pitfalls 39). 대기 951ms가 트레이스 빈칸으로 보임
+- ⏳ 9주 · 느린 송금 트레이스 읽기, 로그에 traceId
+- ⏳ 10주 · 로그 ↔ 트레이스, exemplar, RED 대시보드
+- ⏳ 11주 · SLO·알림
+

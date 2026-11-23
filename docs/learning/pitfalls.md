@@ -392,3 +392,12 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 기본값을 `null`로 지워야 하면 `helm.values: |`(문자열)로 넘긴다. 그리고 "로컬 렌더링 OK"로 끝내지 말고 **클러스터에 실제로 만들어진 리소스**(`kubectl get cm -o yaml`)를 확인한다.
 - 🎤 "GitOps에서 의도한 설정과 실제 적용된 설정이 다른지 어떻게 확인하나요?"
 - 📎 `deploy/argocd/apps/otel-collector.yaml` 주석
+
+### 39. Outbox를 넣으면 분산 트레이스가 끊긴다: 에이전트는 "DB 행 → 나중에 다른 스레드"를 모른다
+
+- **장면 (2026-11-23~24, 9주 차):** 에이전트를 붙이니 gateway → transfer → core는 한 트레이스로 이어졌고, Kafka도 헤더로 이어졌다. 그런데 송금 트레이스는 `INSERT outbox_event`에서 끝나고, notification은 릴레이(`@Scheduled`)가 만든 **다른 트레이스**에 붙어 있었다.
+- **함정:** 자동 계측은 HTTP 헤더, Kafka 헤더처럼 **라이브러리가 아는 길**로만 문맥을 넘긴다. Outbox·DB 큐·배치·지연 작업 테이블처럼 "행에 적고 나중에 다른 스레드가 꺼낸다"는 길은 우리 업무 흐름이라 어떤 에이전트(OTel·Datadog)도 모른다. 장애 때 "이 송금의 알림은 왜 안 갔나"를 추적하려면 trace ID 대신 송금 ID로 로그를 뒤져야 한다. Outbox 설명 글 대부분이 이 부분을 빼먹는다.
+- **원칙:** 비동기로 끊기는 곳에서는 **문맥을 데이터와 함께 저장한다.** trace ID만이 아니라 W3C `traceparent` 전체(부모 span ID, 샘플링 플래그 포함)를 적는다. 꺼낼 때 묶음 처리 구간은 부모가 여럿이라 어느 한 요청의 자식이 될 수 없으므로, **행마다 자식 구간**을 만들고 묶음과는 링크로만 잇는다. 벤더 중립 API(OTel API)로 쓰면 저장소를 바꿔도 코드는 그대로다.
+- 🎤 "Outbox 패턴을 쓰면 분산 트레이싱은 어떻게 되나요?" / "span link는 언제 쓰나요?"
+- 📎 `OutboxRelay.publishSpan`, `infrastructure/tracing/TraceParents.kt`, V7, `observability.md` 5-0
+

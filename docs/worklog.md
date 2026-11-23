@@ -427,6 +427,30 @@
 - 개발자: 실험 판독 5개 + 해결책 선택, `2026-11-23.md`·`concurrency.md` 요약
 - `HEXISTS` 제거 배포 후 명령 수 재측정(송금당 26 → 24 기대)
 
+## 2026-11-23 (밤) ~ 24 · 9주 차: 분산 트레이싱 (Tempo · Collector · 에이전트, Outbox 잇기)
+
+**한 일**
+- Tempo(3.1.1, 단일 바이너리, 72h)·OTel Collector(0.163.2)를 Argo CD로, 공통 차트에 에이전트 2.33.1(init 컨테이너 + `JDK_JAVA_OPTIONS`), Grafana에 Tempo 데이터 소스
+- Collector에서 프로브·`/actuator/**` 잡음 버리기, 지표·로그 파이프라인 제거
+- Outbox에서 끊긴 트레이스 잇기: outbox 행에 `traceparent`(V7), 릴레이가 행마다 그 요청의 자식 구간 → 송금 한 건이 gateway부터 notification까지 span 51개 한 트레이스 (`docs/infra/README.md` 트레이싱)
+- 문서: `observability.md` 5-0(부품·AWS·Datadog, Outbox 잇기, 벤더를 바꿔도 남는 설계), pitfalls 38·39, story-arcs 7번 줄기
+
+**결정 (개발자)**
+- 트레이싱 부품 전부 설치, 프로브도 제외
+- Outbox: 행에 문맥을 심고 "건건이 자식으로" (개발자 직관 = 행마다 자식, 묶음 구간만 링크). `opentelemetry-api` 추가 승인
+- 관측성 배관은 설계 퀴즈 없이 Claude가 구현하고 코드로 설명 ("설계 문제라기보다 너가 잘하는 거")
+
+**버그·트러블슈팅**
+- Argo CD `valuesObject`가 `null`을 버려 Collector 기본값이 남음 → 문자열 `values` (pitfalls 38)
+- Tempo 차트 Service 템플릿이 jaeger 수신기를 전제 → `null`로 지우면 렌더링 깨짐, 남겨 둠
+- Collector 지표 포트 8888은 파드 IP에만 열려 port-forward 불가 → Tempo 쪽에서 확인
+- 에이전트 붙인 뒤 유휴 메모리 +70~90Mi → limit 640Mi
+- 집 랜선이 빠져 proxmox 링크 다운 (전원 문제로 오해했다가 정정)
+
+**다음**
+- 행 0건 릴레이 회차의 빈 트레이스 정리, 느린 송금 트레이스 읽기 연습, 로그에 traceId (9주 차 5단계)
+- 8주 차 손 코딩은 개발자 (Flyway 다음 번호는 V8)
+
 ---
 
 ## 이력서 소재 (계속 갱신)
@@ -467,6 +491,7 @@
 
 **메시징**
 - Kafka(Strimzi, KRaft)로 송금 결과 이벤트 발행·구독, 상태 전이 시점에만 발행해 재요청 중복 발행을 구조적으로 제거
+- Transactional Outbox로 비동기 경계에서 끊기는 분산 트레이스를 W3C traceparent 저장·복원으로 이어, 요청부터 이벤트 소비까지 한 트레이스로 추적 (묶음 발행은 행 단위 자식 구간 + 링크, 벤더 중립 OTel API)
 - Kafka 이벤트 소비 장애를 실제 Kafka로 재현하고 대응: 중복 수신 시 알림 이중 발송(이벤트 ID 유일 제약으로 차단), 깨진 메시지 하나가 파티션 전체를 멈추는 문제(격리 후 건너뛰기)
   - (보류) 이벤트 스키마 호환성 규칙: 지금은 역직렬화 설정 한 줄이라 약하다. 6주 차 이후 실제로 스키마를 바꿔 볼 때 "추가만 허용, 변경은 버전 업 + 소비자 먼저 배포" 규칙으로 쓴다
 - 프로듀서 블로킹 타임아웃(`max.block.ms`)을 조정해 브로커 장애가 송금 API로 전파되는 경로 차단
