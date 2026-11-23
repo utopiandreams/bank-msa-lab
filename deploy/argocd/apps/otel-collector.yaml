@@ -47,6 +47,9 @@ spec:
                 traces:
                   span:
                     - 'IsMatch(attributes["url.path"], "^/(livez|readyz|actuator)(/.*)?$")'
+                    # Hikari 커넥션 풀의 관리 스레드(housekeeper)가 주기적으로 커넥션을 확인하는 빈 쿼리 (2026-11-24 발견).
+                    # 요청과 무관하게 구간 하나짜리 트레이스(이름 = DB 이름)로 쌓인다
+                    - 'IsMatch(attributes["thread.name"], ":housekeeper$")'
               # 트레이스 통째로 고르기 (2026-11-24): 위 filter는 구간 하나씩만 보지만, tail_sampling은 한 트레이스의 구간을
               # decision_wait 동안 모았다가 트레이스 단위로 남길지 정한다 (= 꼬리 기반 샘플링. 운영에선 "에러·느린 것은 꼭 남기기"에 쓴다)
               # 지금 쓰는 정책은 하나: Outbox 릴레이 회차(1초마다, 대부분 0건)를 통째로 버린다.
