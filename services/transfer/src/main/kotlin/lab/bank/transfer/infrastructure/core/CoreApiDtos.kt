@@ -27,6 +27,14 @@ data class CorePostingResponse(
     val replayed: Boolean,
 )
 
+// GET /postings/{멱등 키} 응답 body. status는 "COMPLETED" | "NOT_PROCESSED" (enum으로 받지 않는다:
+// core가 값을 추가해도 역직렬화가 깨지지 않고, 모르는 값은 어댑터가 Unknown으로 분류한다)
+data class CorePostingStatusResponse(
+    val idempotencyKey: String?,
+    val status: String?,
+    val entryId: UUID?,
+)
+
 // 4xx 응답 body: RFC 9457 Problem Details + core가 붙인 code 속성 (예: INSUFFICIENT_BALANCE)
 // 필요한 필드만 받는다. 모르는 필드는 무시 (Jackson 3 기본값)
 data class CoreProblem(

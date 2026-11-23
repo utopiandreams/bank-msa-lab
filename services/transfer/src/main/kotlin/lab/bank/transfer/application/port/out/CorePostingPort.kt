@@ -16,9 +16,13 @@ import lab.bank.transfer.domain.Transfer
  * 예외를 던지지 않는다: 타임아웃·연결 실패·5xx도 [CoreTransferResult.Unknown]으로 돌려준다.
  * 실패를 예외로 두면 유스케이스에서 catch를 빠뜨렸을 때 "모름"이 조용히 사라지기 때문 (sealed + when으로 처리 누락을 컴파일러가 잡게).
  *
- * 8주 차: 상태 조회(GET /postings/{key})로 UNKNOWN을 해소하는 메서드를 여기에 추가한다.
+ * 8주 차 (ADR-0005): 결과 불명은 재전송이 아니라 [lookup]으로 확정한다. core는 거절을 기억하지 않아서
+ * 재전송하면 "옛날 송금이 지금 잔액으로 지금 실행"될 수 있다 (pitfalls 38). [transfer]는 처음 요청에서 한 번만 부른다.
  */
 interface CorePostingPort {
 
     fun transfer(transfer: Transfer): CoreTransferResult
+
+    /** core 계약: GET /postings/{송금 ID}. 돈을 움직이지 않는 조회라 몇 번을 불러도 안전하다. 예외를 던지지 않는다 */
+    fun lookup(transfer: Transfer): CoreTransferLookupResult
 }

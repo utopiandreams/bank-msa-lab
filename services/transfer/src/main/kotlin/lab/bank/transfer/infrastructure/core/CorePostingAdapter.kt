@@ -1,6 +1,7 @@
 package lab.bank.transfer.infrastructure.core
 
 import lab.bank.transfer.application.port.out.CorePostingPort
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.domain.Transfer
 import org.slf4j.LoggerFactory
@@ -76,6 +77,42 @@ class CorePostingAdapter(
             409 -> unknown(transfer, "core 멱등 충돌: ${response.problemOrNull()?.detail ?: status}")
 
             else -> unknown(transfer, "core 응답 $status ${response.problemOrNull()?.detail.orEmpty()}".trim())
+        }
+    }
+
+    /**
+     * 송금 ID로 core 전표를 조회한다 (ADR-0005). 분류:
+     *   200 + COMPLETED + entryId → Completed
+     *   200 + NOT_PROCESSED       → NotProcessed
+     *   200인데 body를 못 읽음·모르는 status·COMPLETED인데 entryId 없음 → Unknown (애매하면 확정하지 않는다)
+     *   그 밖 (4xx·5xx), 응답 없음 (타임아웃·연결 실패) → Unknown
+     * 조회는 GET이고 돈을 움직이지 않아서, Unknown이면 그냥 다음 회차에 다시 물으면 된다.
+     */
+    override fun lookup(transfer: Transfer): CoreTransferLookupResult =
+        try {
+            coreRestClient.get()
+                .uri("/postings/{key}", transfer.id.toString())
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange { _, response -> classifyLookup(transfer, response) }
+        } catch (e: ResourceAccessException) {
+            log.warn("core 송금 조회 응답 없음 transferId={} cause={}", transfer.id, e.message)
+            CoreTransferLookupResult.Unknown(e.message ?: e.javaClass.simpleName)
+        }
+
+    private fun classifyLookup(transfer: Transfer, response: ConvertibleClientHttpResponse): CoreTransferLookupResult {
+        val status = response.statusCode.value()
+        if (status != 200) {
+            log.warn("core 송금 조회 실패 transferId={} status={}", transfer.id, status)
+            return CoreTransferLookupResult.Unknown("core 조회 응답 $status")
+        }
+        val body = runCatching { response.bodyTo(CorePostingStatusResponse::class.java) }.getOrNull()
+        return when {
+            body?.status == "COMPLETED" && body.entryId != null -> CoreTransferLookupResult.Completed(body.entryId)
+            body?.status == "NOT_PROCESSED" -> CoreTransferLookupResult.NotProcessed
+            else -> {
+                log.warn("core 송금 조회 응답을 해석할 수 없음 transferId={} body={}", transfer.id, body)
+                CoreTransferLookupResult.Unknown("core 조회 응답 해석 불가: $body")
+            }
         }
     }
 

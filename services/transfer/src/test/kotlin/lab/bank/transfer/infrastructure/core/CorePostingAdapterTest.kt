@@ -1,5 +1,6 @@
 package lab.bank.transfer.infrastructure.core
 
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
@@ -164,6 +165,80 @@ class CorePostingAdapterTest {
     }
 
     @Nested
+    inner class `상태 조회 분류 (8주 차, ADR-0005)` {
+
+        private val builder = RestClient.builder().baseUrl("http://core")
+        private val server = MockRestServiceServer.bindTo(builder).build()
+        private val adapter = CorePostingAdapter(builder.build())
+        private val statusUrl = "http://core/postings/${transfer.id}"
+
+        private fun respond(status: HttpStatus, body: String = "") {
+            server.expect(requestTo(statusUrl))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
+        }
+
+        @Test
+        fun `GET 송금 ID로 묻는다 - 송금 ID가 core 쪽 멱등 키`() {
+            respond(HttpStatus.OK, """{"idempotencyKey":"${transfer.id}","status":"NOT_PROCESSED"}""")
+
+            adapter.lookup(transfer)
+
+            server.verify()
+        }
+
+        @Test
+        fun `COMPLETED - Completed, 원장 ID를 그대로`() {
+            val entryId = UUID.randomUUID()
+            respond(HttpStatus.OK, """{"idempotencyKey":"${transfer.id}","status":"COMPLETED","entryId":"$entryId","type":"TRANSFER"}""")
+
+            assertEquals(CoreTransferLookupResult.Completed(entryId), adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `NOT_PROCESSED - NotProcessed (실패로 확정할지는 유스케이스가 시간을 보고 판단)`() {
+            respond(HttpStatus.OK, """{"idempotencyKey":"${transfer.id}","status":"NOT_PROCESSED"}""")
+
+            assertEquals(CoreTransferLookupResult.NotProcessed, adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `COMPLETED인데 원장 ID가 없으면 - Unknown (애매하면 확정하지 않는다)`() {
+            respond(HttpStatus.OK, """{"idempotencyKey":"${transfer.id}","status":"COMPLETED"}""")
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `모르는 status 값 - Unknown (core가 값을 늘려도 실패로 오판하지 않는다)`() {
+            respond(HttpStatus.OK, """{"idempotencyKey":"${transfer.id}","status":"PENDING"}""")
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `body를 못 읽으면 - Unknown`() {
+            respond(HttpStatus.OK, "not json")
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `500 - Unknown (NotProcessed로 바꾸면 처리된 송금을 실패로 확정한다)`() {
+            respond(HttpStatus.INTERNAL_SERVER_ERROR)
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
+        }
+
+        @Test
+        fun `404 - Unknown (조회 API는 없는 키에도 200 NOT_PROCESSED라서 404는 경로·배포 문제)`() {
+            respond(HttpStatus.NOT_FOUND)
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
+        }
+    }
+
+    @Nested
     inner class `응답을 못 받는 경우 - 진짜 소켓` {
 
         // 실제 설정 클래스로 클라이언트를 만든다 → 설정의 타임아웃이 정말 걸리는지까지 검증
@@ -212,6 +287,14 @@ class CorePostingAdapterTest {
             val adapter = adapterFor("http://127.0.0.1:$deadPort", readTimeout = Duration.ofSeconds(1))
 
             assertIs<CoreTransferResult.Unknown>(adapter.transfer(transfer))
+        }
+
+        @Test
+        fun `조회 연결 실패 - Unknown, 예외를 던지지 않는다`() {
+            val deadPort = ServerSocket(0).use { it.localPort }
+            val adapter = adapterFor("http://127.0.0.1:$deadPort", readTimeout = Duration.ofSeconds(1))
+
+            assertIs<CoreTransferLookupResult.Unknown>(adapter.lookup(transfer))
         }
     }
 }
