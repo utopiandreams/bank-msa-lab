@@ -230,6 +230,11 @@
   | 묶음(RED·SLO) | CloudWatch Application Signals | CloudWatch → Application Signals |
 
   **OpenTelemetry가 공통어**라서 저장소를 Tempo → X-Ray(또는 Datadog·New Relic)로 바꿔도 앱은 그대로, Collector의 보내는 곳(exporter)만 바꾼다 = Collector를 중간에 두는 이유. 🎤 "벤더 종속 없이 관측성을 구성하려면?"
+- 💡 **Datadog · New Relic** (2026-11-23 개발자 질문: "그라파나·로키 기능을 다 포함하나?") → 네. 지표·대시보드·트레이스(APM)·로그·알림(+ RUM·외부 모니터링)을 **한 SaaS로 묶은 것**. 고르는 기준:
+  - SaaS: 운영할 게 거의 없고 지표·로그·트레이스가 한 화면에서 이어진다 / **비싸다**(호스트·데이터양 과금, 특히 로그), 데이터가 회사 밖으로
+  - 직접 운영(우리 구성 = Grafana LGTM: Loki·Grafana·Tempo·Mimir/Prometheus): 무료, 데이터가 안에 / 용량·업그레이드·장애를 직접 책임
+  - 국내 금융권: 규제로 데이터를 못 내보내는 경우가 많아 설치형 APM(Pinpoint·Scouter·제니퍼·와탭 설치형)이나 직접 운영
+  - OTel로 만들어 두면 SaaS로 옮길 때 Collector의 exporter만 바꾼다. 🎤 "Datadog 대신 직접 구축한 이유는?"
 - 💡 에이전트는 **같은 처리 흐름 안에서** 송장을 넘긴다. Outbox처럼 요청 스레드는 INSERT만 하고 다른 스레드(릴레이)가 나중에 발행하면? → 9주 차 4단계의 질문
 - 🎤 "지표와 트레이스는 각각 무엇을 답하나요?" / "분산 트레이싱에서 trace ID는 서비스 사이에 어떻게 전달되나요?" / "코드 수정 없이 어떻게 트레이스가 생기나요?"
 - 📎 9주 차 실험 기록(예정), CLAUDE.md 2장 아키텍처 그림
