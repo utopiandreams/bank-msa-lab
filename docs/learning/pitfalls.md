@@ -384,3 +384,11 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 고객이 없는 해소 일꾼은 **새로 돈을 움직이지 않고 확인만** 한다 (상태 조회 → 처리됨이면 반영, 안 됐으면 실패로 확정). 재전송(=지금 실행)은 실행 의사가 지금 있는 쪽(고객의 같은 키 재요청)만 한다. "처리 안 됨"으로 포기할 때는 원래 요청이 뒤늦게 커밋되지 않는다는 보장도 필요하다.
 - 🎤 "결과를 모르는 요청은 재시도하면 되지 않나요? 멱등 키도 있는데" / "해소 배치가 상대에 재요청과 조회 중 무엇을 해야 하나요?"
 - 📎 `docs/design-drills/08-unknown-resolution.md` 1부, `CorePostingAdapter.classify`, pitfalls 27
+
+### 38. Argo CD `valuesObject`는 `null`을 버린다: 로컬 `helm template`과 클러스터 결과가 다르다
+
+- **장면 (2026-11-23, 9주 차 OTel Collector):** 차트 기본값의 debug 출력·metrics/logs 파이프라인을 `null`로 지웠다. 로컬 `helm template`에선 사라졌는데, 클러스터의 ConfigMap에는 그대로 남아 있었다.
+- **함정:** Helm은 values에서 `null`을 "이 키를 지워라"로 읽는다. 그런데 Argo CD Application의 `helm.valuesObject`(YAML 객체)로 넘기면 `null` 값이 전달 과정에서 빠져 **기본값이 살아남는다.** 로컬 검증이 통과해서 더 늦게 알아챈다. 지우려던 게 보안·비용 관련(디버그 로그에 데이터 노출, 불필요한 수집기)이면 사고가 된다.
+- **원칙:** 기본값을 `null`로 지워야 하면 `helm.values: |`(문자열)로 넘긴다. 그리고 "로컬 렌더링 OK"로 끝내지 말고 **클러스터에 실제로 만들어진 리소스**(`kubectl get cm -o yaml`)를 확인한다.
+- 🎤 "GitOps에서 의도한 설정과 실제 적용된 설정이 다른지 어떻게 확인하나요?"
+- 📎 `deploy/argocd/apps/otel-collector.yaml` 주석

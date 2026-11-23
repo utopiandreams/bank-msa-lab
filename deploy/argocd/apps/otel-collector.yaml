@@ -18,46 +18,48 @@ spec:
     targetRevision: 0.178.2   # Collector 0.163.2 (2026-11-02, 2주 넘게 검증된 버전)
     helm:
       releaseName: otel-collector
-      valuesObject:
-        fullnameOverride: otel-collector   # Service 이름 otel-collector.monitoring (서비스 차트의 tracing.endpoint)
-        mode: deployment                   # 노드마다(DaemonSet)가 아니라 하나. 앱이 Service 주소로 보낸다
-        image:
-          repository: otel/opentelemetry-collector-k8s   # 쿠버네티스용 배포판 (필요한 구성 요소만 든 작은 이미지)
-        # 기본값이 여는 Jaeger·Zipkin 포트는 쓰지 않는다 (받는 길은 OTLP 하나)
-        ports:
-          jaeger-compact: { enabled: false }
-          jaeger-thrift: { enabled: false }
-          jaeger-grpc: { enabled: false }
-          zipkin: { enabled: false }
-        resources:
-          requests: { cpu: 50m, memory: 128Mi }
-          limits: { memory: 256Mi }   # memory_limiter가 이 값의 80%에서 받기를 멈춰 OOMKilled 대신 거절한다
-        config:
-          receivers:
-            jaeger: null
-            zipkin: null
-            prometheus: null
-          processors:
-            # 잡음 버리기 (2026-11-23): 쿠버네티스 프로브(/livez·/readyz, 몇 초마다)와 Prometheus 수집(/actuator/**, 15초마다)도
-            # 서버 구간으로 잡혀 트레이스 검색을 가린다. 앱 쪽 에이전트에는 경로 제외 설정이 없어서 Collector에서 버린다
-            filter/noise:
-              error_mode: ignore
-              traces:
-                span:
-                  - 'IsMatch(attributes["url.path"], "^/(livez|readyz|actuator)(/.*)?$")'
-          exporters:
-            debug: null
-            otlp/tempo:
-              endpoint: tempo.monitoring:4317
-              tls: { insecure: true }   # 클러스터 안 통신 (학습 타협, mTLS는 범위 밖)
-          service:
-            pipelines:
-              traces:
-                receivers: [otlp]
-                processors: [memory_limiter, filter/noise, batch]   # 메모리 상한 먼저 → 잡음 버리기 → 묶어 보내기
-                exporters: [otlp/tempo]
-              metrics: null   # 지표는 Prometheus가 앱에서 직접 긁는다 (Micrometer)
-              logs: null      # 로그는 10주 차 Loki
+      # values(문자열)로 쓴다: valuesObject로 쓰면 Argo CD가 null 값을 버려서, 기본값을 지우려던 null(debug 출력,
+      # metrics·logs 파이프라인, prometheus 수신기)이 무시되고 기본값이 그대로 남았다 (2026-11-23, pitfalls 38)
+      values: |
+          fullnameOverride: otel-collector   # Service 이름 otel-collector.monitoring (서비스 차트의 tracing.endpoint)
+          mode: deployment                   # 노드마다(DaemonSet)가 아니라 하나. 앱이 Service 주소로 보낸다
+          image:
+            repository: otel/opentelemetry-collector-k8s   # 쿠버네티스용 배포판 (필요한 구성 요소만 든 작은 이미지)
+          # 기본값이 여는 Jaeger·Zipkin 포트는 쓰지 않는다 (받는 길은 OTLP 하나)
+          ports:
+            jaeger-compact: { enabled: false }
+            jaeger-thrift: { enabled: false }
+            jaeger-grpc: { enabled: false }
+            zipkin: { enabled: false }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }   # memory_limiter가 이 값의 80%에서 받기를 멈춰 OOMKilled 대신 거절한다
+          config:
+            receivers:
+              jaeger: null
+              zipkin: null
+              prometheus: null
+            processors:
+              # 잡음 버리기 (2026-11-23): 쿠버네티스 프로브(/livez·/readyz, 몇 초마다)와 Prometheus 수집(/actuator/**, 15초마다)도
+              # 서버 구간으로 잡혀 트레이스 검색을 가린다. 앱 쪽 에이전트에는 경로 제외 설정이 없어서 Collector에서 버린다
+              filter/noise:
+                error_mode: ignore
+                traces:
+                  span:
+                    - 'IsMatch(attributes["url.path"], "^/(livez|readyz|actuator)(/.*)?$")'
+            exporters:
+              debug: null
+              otlp/tempo:
+                endpoint: tempo.monitoring:4317
+                tls: { insecure: true }   # 클러스터 안 통신 (학습 타협, mTLS는 범위 밖)
+            service:
+              pipelines:
+                traces:
+                  receivers: [otlp]
+                  processors: [memory_limiter, filter/noise, batch]   # 메모리 상한 먼저 → 잡음 버리기 → 묶어 보내기
+                  exporters: [otlp/tempo]
+                metrics: null   # 지표는 Prometheus가 앱에서 직접 긁는다 (Micrometer)
+                logs: null      # 로그는 10주 차 Loki
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
