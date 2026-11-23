@@ -95,6 +95,34 @@
 - 💡 원칙: 순서로 짝을 맞추는 일반 명령은 연결을 나눠 쓰고, 순서를 깨는 것(밀어 보내는 메시지, 서버 쪽 대기)은 연결을 따로 둔다
 - 🎤 "한 연결로 여러 요청을 동시에 보내면 응답은 어떻게 구분하나요?" / "pub/sub 연결에서 GET을 하면?" / "RESP3는 뭐가 달라졌나요?"
 
+## 8. 락 한 번에 Redis 명령이 몇 개 나가나 (13개, 왕복은 4번) ✅
+
+> 2026-11-23 k6 락 비교에서 "송금 1건에 Redis 명령 약 26개"가 나와 시작. 개발자 질문: "Lua 스크립트가 아니라 단건 요청을 여러 번 한 거야?"
+> 확인: Redisson 4.8.0 jar의 `RedissonLock`·`RedissonBaseLock` 상수 문자열(Lua)과 바이트코드, 우리 `RedisAccountLocks.kt:40`. 측정: `INFO commandstats` 전후 차이 (송금 약 101건 × 계좌 2개 = 락 약 203번)
+
+- 💡 **Redis는 Lua 스크립트 안의 `redis.call`도 하나씩 센다.** `INFO commandstats`·`total_commands_processed`에 `evalsha` 1개와 그 안의 `exists`·`hincrby`… 가 모두 잡힌다 → "명령 26개 ≠ 네트워크 왕복 26번"
+- 💡 락 하나(잡기 → 확인 → 풀기)의 실제 모습:
+
+| 순서 | 누가 | 왕복 | 안에서 실행된 명령 |
+| --- | --- | --- | --- |
+| ① `tryLock` | Redisson Lua (`evalsha`) | 1 | `exists` → (없으니 `or` 뒤 `hexists`는 건너뜀) `hincrby +1` · `pexpire` |
+| ② `isHeldByCurrentThread` | **우리 코드**, 단건 `HEXISTS` | 1 | `hexists` |
+| ③ `unlock` | Redisson Lua (`evalsha`) | 1 | `get`(풀기 기록) · `hexists` · `hincrby -1` · `del` · `publish`(대기자 깨우기) · `set`(풀기 기록) |
+| ④ 풀기 기록 정리 | Redisson 단건 `DEL` | 1 | `del` |
+| 합 | | **4** | **13** (= evalsha 2 + 안쪽 9 + 단건 2) |
+
+  송금 1건 = 계좌 2개 잠금 → 명령 26개, 왕복 8번. 측정값(명령 종류별 ÷ 101)과 정확히 맞는다
+- 💡 **③의 `get`/`set KEYS[3]`은 "풀기의 멱등 키"다.** 풀기 요청의 응답이 유실돼 Redisson이 재시도하면, 이미 푼 락을 또 풀다 남의 락을 건드리거나 에러가 나지 않게 처음 결과를 기록해 두고 그대로 돌려준다 (요청 ID별 키, 짧은 만료). 이 프로젝트의 송금 멱등 키와 같은 발상이 라이브러리 안에도 있다
+- 💡 **②는 우리가 넣은 왕복이다** (전체 왕복의 1/4). 목적은 "임대 시간(lease)이 지나 이미 풀린 락을 unlock하면 `IllegalMonitorStateException`"을 피하려는 것. 그런데 확인과 풀기 사이에도 만료될 수 있어서(TOCTOU) 완전히 막지도 못한다. 대안: 확인 없이 unlock하고 그 예외를 잡기 → 왕복 1번 절약, 안전성은 같음. (바꿀지는 개발자 판단, 아직 안 바꿈)
+- 💡 경합이 없어도 이 비용은 그대로 든다 → spread(경합 거의 없음)에서도 송금당 26개였던 이유. DB 락(PESSIMISTIC·ATOMIC)은 이 왕복이 0이다 = **분산 락의 기본 요금**
+
+🎤 꼬리 질문
+- "Redis 분산 락 한 번에 네트워크 왕복이 몇 번인가요? 줄일 수 있나요?"
+- "Lua 스크립트를 쓰면 왜 원자적인가요?" → Redis는 명령을 한 스레드로 차례대로 실행하고, 스크립트 하나는 중간에 다른 명령이 끼지 않는 한 덩어리로 돈다
+- "unlock 응답이 유실되면 어떻게 되나요?" → 풀기 기록(멱등 키)으로 재시도 안전
+
+📎 `services/core/.../account/infrastructure/lock/RedisAccountLocks.kt:40`, `load-test/lock-compare.sh` (명령 종류별 차이 기록), `load-test/results/lock-hot-REDIS-*.txt`
+
 ## ✍️ 내 말로 요약 (개발자)
 
 - pub/sub 락 대기에서 "자는 것"과 "깨우는 것":

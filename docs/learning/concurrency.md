@@ -84,7 +84,8 @@ UPDATE account SET balance = balance - :amt, version = version + 1
 - 💡 TTL 딜레마: 짧으면 처리 중에 만료돼 둘이 들어오고, 길면 죽은 클라이언트의 락이 오래 남는다 → Redisson 워치독, 그래도 GC 멈춤이면 뚫린다 → DB 쪽 안전망(`@Version`) 또는 펜싱 토큰
 - 💡 공정성: 기본 RLock은 불공정, `RFairLock`은 FIFO (대가: 명령 수, 죽은 대기자 때문에 뒷사람이 막힘)
 - 🎤 "DB 락이 있는데 분산 락을 왜 쓰나요?" / "락이 만료됐는데 작업이 안 끝났으면?" / "Redis가 죽으면?" / "Lettuce 스핀 락과 Redisson 차이는?"
-- 📎 `RedisAccountLocks`(대기 상한은 마감 시각 하나, ID 순서로 잡고 반대로 풂), `RedisLockScopeTest`, `RedisLockConcurrencyTest`(재시도 0), pitfalls 34, k6 결과(예정)
+- 📎 `RedisAccountLocks`(대기 상한은 마감 시각 하나, ID 순서로 잡고 반대로 풂), `RedisLockScopeTest`, `RedisLockConcurrencyTest`(재시도 0), pitfalls 34, k6 결과 `docs/experiments/week-07-locks.md`
+- 💡 (k6, 2026-11-23) **분산 락의 기본 요금:** 락 한 번 = 명령 13개, 왕복 4번 (경합 없어도). 송금당 약 0.6ms. hot 300건/초부터 REDIS 계열만 core OOMKilled (원인 판독은 실험 기록)
 
 ## 6. 공정성과 처리량
 
@@ -111,7 +112,11 @@ UPDATE account SET balance = balance - :amt, version = version + 1
 | 새 인프라 | 없음 | 없음 | 없음 | Redis (장애점 추가) |
 | 주의 | 0행 확인, 격리 수준 | 데드락, 커넥션 고갈, lock_timeout | 재시도 폭증, 불공정 | 락 범위, TTL, Redis 장애 |
 
-(k6 측정 후 TPS·p99·최대 지연·실패 수 행을 추가한다)
+| **k6 hot 300건/초** (성공/9,001, p99) | 9,001, 6.9ms | 9,000, 121ms | 8,558 (500 × 443), 59ms | REDIS 1,486 💥 core OOMKilled |
+| **k6 hot 500건/초** | 15,001, 7.0ms | 13,907, p50 1.26s | 9,196 (실패 39%), 76ms | REDIS 147 💥 |
+| **k6 spread 200건/초 p99** | 5.7ms | 5.9ms | 6.2ms | 6.7ms (명령 26개/건) |
+
+(2026-11-23 측정, core replicas 1. 락 없음은 150건/초부터 잔액 깨짐. 원본과 판독: `docs/experiments/week-07-locks.md`)
 
 ## ✍️ 내 말로 요약 (개발자)
 
