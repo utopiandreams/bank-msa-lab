@@ -238,7 +238,8 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 - 확인: Grafana → Explore → Tempo → Search(Service Name) 또는 TraceQL. API: `kubectl -n monitoring port-forward svc/tempo 3200` → `/api/search?q={...}`, `/api/traces/<id>`
 - 첫 확인 (2026-11-23): gateway → transfer → core 송금 한 건이 span 39개 한 트레이스. Kafka 구간은 에이전트가 헤더(`traceparent`)로 이어 주지만, **Outbox에서 끊긴다** (요청 트레이스는 outbox INSERT로 끝, 릴레이가 새 트레이스로 발행 → notification은 릴레이 트레이스에 붙음). 해결은 아래
 - **Outbox 트레이스 잇기 (2026-11-24, pitfalls 39):** outbox 행에 W3C `traceparent`(V7 `trace_parent`)를 적고, 릴레이가 행마다 `outbox publish` 구간을 그 요청의 자식으로 만든 뒤 그 아래에서 Kafka로 보낸다 (회차 구간 `OutboxRelay.relay`는 링크로만). 앱은 `opentelemetry-api`만 의존하고 실제 동작은 에이전트가 이어 준다 (에이전트 2.33.1은 API 1.65까지, Boot 관리 버전 1.62). 확인: 송금 한 건 = span 51개 한 트레이스, gateway → core → outbox INSERT ··951ms·· outbox publish → Kafka → notification INSERT/UPDATE. 대기 시간은 속성 `outbox.wait_ms`
-- 남은 잡음: 행이 0건인 릴레이 회차도 1초마다 `OutboxRelay.relay` 트레이스를 만든다 (다음 단계에서 정리)
+- **잡음 정리 (2026-11-24):** 릴레이 회차(1초마다, 대부분 0건)는 Collector `tail_sampling`의 drop 정책으로 트레이스 통째로 버림 (구간 단위 filter로 회차 구간만 지우면 자식 SELECT가 부모 잃은 트레이스로 남는다). Hikari 풀 housekeeper의 커넥션 확인 쿼리(구간 하나짜리, 이름 = DB 이름)는 `filter/noise`로. 설정 검증: 차트를 `helm template`으로 렌더링한 ConfigMap을 `docker run otel/opentelemetry-collector-k8s:<버전> validate --config=...`로
+- 남은 후보: 8주 차 `UnknownResolutionScheduler.resolve`도 주기적으로 트레이스를 만든다 (해소할 게 없을 때는 잡음). 8주 차 구현이 끝난 뒤 판단
 
 ### 배포 구조 (GitOps)
 
