@@ -51,6 +51,10 @@ server:
 # 락 전략 (7주 차 실험 스위치, account/application/balance/LockProperties). 파드가 뜰 때의 기본값
 # 실행 중 변경: POST :8081/actuator/experiments {"lockStrategy": "..."} (재시작하면 여기 값으로 돌아온다)
 core:
+  posting:
+    # 거래 트랜잭션 상한 (8주 차 ADR-0005). 넘으면 커밋하지 않고 롤백 → transfer 해소 일꾼이 5초 뒤 조회한 "전표 없음"을 믿을 수 있다.
+    # transfer의 transfer.resolution.check-after(5s)보다 짧게. 시계는 트랜잭션 시작부터, SQL을 보낼 때마다 남은 시간을 건다 (초 단위)
+    transaction-timeout: 3s
   lock:
     # 기본값 ATOMIC_UPDATE (2026-11-23 개발자 결정, docs/experiments/week-07-locks.md): 지금 규칙(잔액 ≥ 금액, 소유자)은 전부 행 하나 안의 조건.
     # 핫 계좌 500건/초에서도 p99 7ms·실패 0. 행 밖 정보가 필요한 규칙(일일 이체 한도 등)이 생기면 그 작업만 비관적 락으로

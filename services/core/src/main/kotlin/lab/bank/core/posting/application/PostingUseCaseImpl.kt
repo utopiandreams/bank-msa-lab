@@ -13,7 +13,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.time.Duration
 import java.util.UUID
 import kotlin.random.Random
 
@@ -24,7 +26,10 @@ import kotlin.random.Random
  */
 @Service
 class PostingUseCaseImpl(
-    private val transactionTemplate: TransactionTemplate,
+    transactionManager: PlatformTransactionManager,
+    // 거래 트랜잭션 상한 (8주 차 ADR-0005 결정 3). 넘으면 커밋하지 않고 롤백한다 → transfer가 5초 뒤 조회한 "전표 없음"을 믿을 수 있다.
+    // transfer의 transfer.resolution.check-after(5초)보다 짧아야 한다. Spring 트랜잭션 타임아웃은 초 단위
+    @Value("\${core.posting.transaction-timeout:3s}") transactionTimeout: Duration,
     private val accountLocks: AccountLocks,
     private val accountUseCase: AccountUseCase,
     private val ledgerUseCase: LedgerUseCase,
@@ -32,6 +37,19 @@ class PostingUseCaseImpl(
     @Value("\${core.lock.optimistic-max-attempts:3}") private val optimisticMaxAttempts: Int,
     meterRegistry: MeterRegistry,
 ) : PostingUseCase {
+
+    /**
+     * 공유 TransactionTemplate 빈 대신 거래 전용 템플릿 (타임아웃은 거래에만, 다른 모듈·나중의 배치에는 안 걸리게).
+     *
+     * 동작: 시작 시각 + timeout을 마감으로 두고, SQL을 보낼 때마다 남은 시간을 그 문장의 타임아웃으로 건다.
+     * 남은 시간이 없으면 문장을 보내지 않고 예외 → 롤백. 행 락 대기(ATOMIC_UPDATE의 조건부 UPDATE)가 길어지면 드라이버가 문장을 취소한다.
+     * 한계: 시계는 트랜잭션마다 따로. 그 앞의 대기(톰캣·커넥션 풀·Redis 락)와 재시도 루프(OPTIMISTIC 전략)는 못 막는다 → 대사가 잡는다.
+     * `docs/learning/timeouts-and-deadlines.md` 4절
+     */
+    private val transactionTemplate = TransactionTemplate(transactionManager).apply {
+        require(transactionTimeout >= Duration.ofSeconds(1)) { "core.posting.transaction-timeout은 1초 이상 (Spring 트랜잭션 타임아웃은 초 단위): $transactionTimeout" }
+        timeout = transactionTimeout.toSeconds().toInt()
+    }
 
     // 재시도 횟수 지표: k6 실험에서 "충돌이 얼마나 났나"를 Grafana로 본다 (core_posting_optimistic_retries_total)
     private val optimisticRetries: Counter = Counter.builder("core.posting.optimistic.retries")
