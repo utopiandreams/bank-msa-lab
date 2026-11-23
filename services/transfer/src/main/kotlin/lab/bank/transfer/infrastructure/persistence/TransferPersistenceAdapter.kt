@@ -9,6 +9,7 @@ import org.hibernate.exception.ConstraintViolationException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.UUID
 
 // 저장 포트의 JPA 구현 (아웃바운드 어댑터)
@@ -36,6 +37,9 @@ class TransferPersistenceAdapter(
 
     override fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): Transfer? =
         jpaRepository.findByRequesterIdAndIdempotencyKey(requesterId.value, idempotencyKey.value)?.let(TransferMapper::toDomain)
+
+    override fun findUnresolvedForUpdate(sentBefore: Instant, limit: Int): List<Transfer> =
+        jpaRepository.findUnresolvedForUpdate(sentBefore, limit).map(TransferMapper::toDomain)
 
     // Spring 예외 안쪽의 Hibernate 예외가 DB가 알려 준 제약 이름을 갖고 있다
     private fun violatedConstraint(e: DataIntegrityViolationException): String? =

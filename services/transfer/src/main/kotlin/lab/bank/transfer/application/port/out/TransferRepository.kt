@@ -4,6 +4,7 @@ import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.domain.UserId
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -24,6 +25,12 @@ interface TransferRepository {
 
     // 멱등 키는 요청자별로 유일하다 (Flyway V3) → 요청자 없이 키만으로는 찾지 않는다
     fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): Transfer?
+
+    /**
+     * 해소 대상: PROCESSING·UNKNOWN이고 core에 보낸 시각(createdAt)이 sentBefore보다 이른 당행 송금, 오래된 순으로 최대 limit건.
+     * **트랜잭션 안에서만** 부른다: 잡은 행을 커밋까지 잠그고(FOR UPDATE), 다른 트랜잭션이 잠근 행은 건너뛴다(SKIP LOCKED).
+     */
+    fun findUnresolvedForUpdate(sentBefore: Instant, limit: Int): List<Transfer>
 }
 
 interface InterbankTransferRepository {
