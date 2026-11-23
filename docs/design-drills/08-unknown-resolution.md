@@ -88,4 +88,10 @@
 | 2 | 홉마다 "보낸 시각" 기준은? | **의도 상태가 된 시각(`updatedAt`) + 그 홉의 상한 + 여유** | 의도 상태를 커밋한 직후 보내고, 재전송이 없으니 그 상태에 있는 동안 `updatedAt`이 안 바뀐다. **조건: 해소 일꾼이 조회 실패 시 행을 건드리지 않는다** (같은 상태로 다시 저장하면 기준이 밀림). 출금 홉 = 5초(당행과 같음), 외부 홉 = **bank-mock 처리 상한** + 여유 (우리 클라이언트 타임아웃 3초가 아니라) |
 | 3 | 외부에 안 보낸 송금의 취소는 어떤 상태로? | `EXTERNAL_BANK_REJECTED` → **`WITHDRAW_CANCEL_REQUESTED`로 이름 변경**, 들어오는 길 추가 (`WITHDRAW_REQUESTED`·`WITHDRAWN`·`EXTERNAL_BANK_REQUESTED`에서). "왜"(외부 거절 / 안 보냄 / 외부 없음)는 실패 사유 칸에 | 의도 상태는 **행위**(지금 무엇을 요청 중인가)로 짓는다. 앞의 두 상태(`WITHDRAW_REQUESTED`, `EXTERNAL_BANK_REQUESTED`)와 같은 규칙. 결과("왜")로 지으면 시도조차 안 한 경로에서 거짓말이 된다 (개발자 첫 안 `EXTERNAL_BANK_FAILED`, `EXTERNAL_BANK_REQUEST_FAILED` → 둘 다 "왜"). Flyway 마이그레이션 필요 |
 
-남은 것: `EXTERNAL_BANK_REQUESTED`에서 외부 성공 확인 뒤 "나머지 로직 재개" (개발자 후술 예정), 보상 재시도가 계속 실패할 때(head-of-line, 격리)
+| 4 | 외부 성공을 확인하면? | `COMPLETED` + 완료 이벤트 (한 로컬 트랜잭션). 실패하면 다음 회차에 같은 조회 → 같은 결과 → 다시 저장 | 피벗(외부 성공) 뒤는 되돌릴 수 없어 앞으로만 간다 (ADR-0004). 피벗 뒤 일이 늘어나도 멱등 + 성공할 때까지 재시도 |
+| 5 | 고객 같은 키 재요청 (타행) | **보류**: 해소 일꾼을 만든 뒤 결정. 지금은 현재 상태만 돌려준다 | 그냥 둬도 일꾼이 푼다 → 정합성 문제가 아니라 응답 속도 문제. 지금처럼 두면 `@Version` 충돌 처리도 필요 없음 |
+| 6 | bank-mock 기록이 사라지면 (메모리 저장, 재시작) | **가짜의 한계로 둔다** | 계약("상한 뒤 '없음'은 믿는다")은 상대가 기록을 잃지 않는다는 전제. 실제 은행은 지키지만 bank-mock은 재시작하면 성공 기록을 잃어 "없음" → 출금 취소 → 이중 지급 가능. 대사(정산 대사)가 잡는다. Redis 검토: 지금 Redis는 락 전용으로 저장을 꺼 둠(`--save "" --appendonly no`), 켜도 AOF everysec는 마지막 1초를 잃어 막으려는 장면("성공 직후 재시작")을 못 막음 → 기각. 17주 차 카오스 후보: bank-mock 재시작 → 대사가 잡나 |
+
+남은 것: ~~`EXTERNAL_BANK_REQUESTED`에서 외부 성공 확인 뒤 "나머지 로직 재개"~~ (결정 4), 보상 재시도가 계속 실패할 때(head-of-line, 격리)
+
+재현 테스트: `InterbankUnknownResolutionReproTest` (2026-11-24, 3개 모두 실패 = 재현: WITHDRAWN·EXTERNAL_BANK_REQUESTED·EXTERNAL_BANK_REJECTED에 멈춘 송금을 해소 일꾼이 안 봄)
