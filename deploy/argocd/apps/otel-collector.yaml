@@ -37,6 +37,14 @@ spec:
             jaeger: null
             zipkin: null
             prometheus: null
+          processors:
+            # 잡음 버리기 (2026-11-23): 쿠버네티스 프로브(/livez·/readyz, 몇 초마다)와 Prometheus 수집(/actuator/**, 15초마다)도
+            # 서버 구간으로 잡혀 트레이스 검색을 가린다. 앱 쪽 에이전트에는 경로 제외 설정이 없어서 Collector에서 버린다
+            filter/noise:
+              error_mode: ignore
+              traces:
+                span:
+                  - 'IsMatch(attributes["url.path"], "^/(livez|readyz|actuator)(/.*)?$")'
           exporters:
             debug: null
             otlp/tempo:
@@ -46,7 +54,7 @@ spec:
             pipelines:
               traces:
                 receivers: [otlp]
-                processors: [memory_limiter, batch]   # 순서: 메모리 상한을 먼저 (넘치면 batch에 쌓기 전에 거절)
+                processors: [memory_limiter, filter/noise, batch]   # 메모리 상한 먼저 → 잡음 버리기 → 묶어 보내기
                 exporters: [otlp/tempo]
               metrics: null   # 지표는 Prometheus가 앱에서 직접 긁는다 (Micrometer)
               logs: null      # 로그는 10주 차 Loki
