@@ -345,6 +345,22 @@
 
 ---
 
+## ⭐ 7-5. OOMKilled 판독 순서 (2026-11-23 7주 차에서 실제로 한 것)
+
+> 개발자 소감: "대시보드는 아직 많이 어렵다". 오늘 막힌 곳은 "패널이 짜부돼서 안 보임" → Explore에서 쿼리 하나씩 크게 보기로 해결. 아래 순서를 그대로 다시 쓰면 된다.
+
+1. **스레드가 상한에 붙었나** → 대시보드 **JVM (Micrometer)**, Application=`core`, Instance 전체(재시작하면 시계열이 나뉜다) → 행 **JVM Misc** → **Threads**. 상한(톰캣 200)에 붙었으면 "줄이 생겼다". 넘을 수는 없다 (넘으면 톰캣 말고 다른 범인)
+2. **살아남은 회차와 비교** → 같은 상한에 붙었는데 한쪽만 죽었다면 "몇 개가 기다렸나"는 원인이 아니다 → "기다리며 무엇을 붙잡았나"로
+3. **Explore**(왼쪽 메뉴) → Prometheus → **Code** 모드에서 하나씩:
+   - 컨테이너 전체 (커널이 OOMKilled를 판단하는 숫자): `container_memory_working_set_bytes{namespace="bank",pod=~"core-.*",container!="",container!="POD"}`
+   - 힙 밖 Netty 버퍼: `jvm_buffer_memory_used_bytes{application="core", id="direct"}`
+   - DB 커넥션을 기다린 요청: `hikaricp_connections_pending{application="core"}`
+4. 힙·논힙이 평평한데 컨테이너가 limit에 닿았다 = **힙 밖**. direct 버퍼, 스레드 스택, 대기열의 연결을 의심
+
+- 💡 패널이 작으면 고생하지 말고 Explore로. 패널 제목 옆 메뉴 → **Explore**를 누르면 그 패널의 쿼리를 그대로 들고 간다
+- 💡 OOMKilled ≠ `OutOfMemoryError`. 전자는 컨테이너(힙 + 힙 밖)가 limit을 넘어 커널이 죽인 것, 후자는 힙이 찬 것. 힙 그래프만 보면 전자를 놓친다
+- 📎 `docs/experiments/week-07-locks.md` 판독 1, pitfalls 37
+
 ## 이 프로젝트에서 익숙해지는 방법
 
 - 실험 기록(`docs/experiments/`)에 **"대시보드 판독"** 칸을 둔다: 어느 그래프가 먼저 꺾였고, 무엇이 피해자였나. 재현 → 그래프 캡처 → 판독 → 해결 → 다시 캡처
