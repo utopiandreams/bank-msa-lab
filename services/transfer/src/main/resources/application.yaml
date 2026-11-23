@@ -39,6 +39,14 @@ bank-mock:
   connect-timeout: 1s
   read-timeout: 3s             # 임시값. 넘으면 외부가 처리했는지 모름 → 보상하지 않고 INTERBANK_REQUESTED에 남는다. 15주 차 지연 실험에서 조정
 
+# 결과 불명 해소 (8주 차 ADR-0005, infrastructure/resolution/ResolutionProperties)
+transfer:
+  resolution:
+    enabled: true
+    poll-interval: 5s      # 회차 사이 쉬는 시간
+    check-after: 5s        # 보낸 시각(createdAt) + 이만큼 지나야 조회. 정합성 장치: core 트랜잭션 타임아웃 3s·transfer→core 최악 4s보다 길게
+    batch-size: 10         # 조회하는 동안 행 잠금·커넥션을 쥐므로 작게
+
 # Transactional Outbox (6주 차, infrastructure/outbox/OutboxProperties)
 outbox:
   relay:

@@ -3,6 +3,7 @@ package lab.bank.transfer.application
 import lab.bank.transfer.FakeCoreConfiguration
 import lab.bank.transfer.FakeCorePostingPort
 import lab.bank.transfer.TestcontainersConfiguration
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.DuplicateIdempotencyKeyException
 import lab.bank.transfer.application.port.out.TransferRepository
@@ -23,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -38,8 +40,10 @@ import kotlin.test.assertTrue
  * 고객 멱등 키 명세 (T-2). TransferUseCaseImpl의 TODO(개발자)를 구현하면 전부 초록이 된다.
  *
  *   같은 키의 기존 송금이                  처리
- *   COMPLETED / FAILED / PROCESSING      그대로 반환 (replayed, core 호출 없음)
- *   UNKNOWN                              같은 송금 ID로 core 재전송 → 결과 반영 (또 모름이면 UNKNOWN 유지)
+ *   COMPLETED / FAILED                   그대로 반환 (replayed, core 호출 없음)
+ *   PROCESSING / UNKNOWN, 보낸 지 5초 안   그대로 반환 (core가 아직 처리 중일 수 있어 조회도 안 함)
+ *   PROCESSING / UNKNOWN, 5초 지남        core에 **조회** → 처리됨 COMPLETED / 안 됨 FAILED(CORE_NOT_PROCESSED) / 조회 실패 그대로
+ *                                        **재전송 없음** (8주 차 ADR-0005, 이전 T-2: UNKNOWN이면 재전송)
  *   내용이 다름                           IdempotencyConflictException
  *   동시에 같은 키                        송금 1건, core 호출 1번
  */
@@ -69,12 +73,15 @@ class TransferIdempotencyTest {
         transferUseCase.transfer(requester, key, from, to, Amount(amount))
 
     // 이미 저장된 송금을 원하는 상태로 만들어 둔다 (PROCESSING·UNKNOWN은 정상 흐름으로는 멈춰 있게 만들기 어려워서)
-    private fun existing(key: IdempotencyKey, status: TransferStatus, amount: Long = 10_000): Transfer {
-        val now = Instant.now()
+    // age: 보낸 지 얼마나 됐나 (createdAt = core에 보낸 시각, ADR-0005 결정 1)
+    private fun existing(key: IdempotencyKey, status: TransferStatus, amount: Long = 10_000, age: Duration = Duration.ZERO): Transfer {
+        val sentAt = Instant.now().minus(age)
         return transferRepository.save(
-            Transfer(UUID.randomUUID(), chulsoo, key, from, to, Amount(amount), status, null, null, now, now, null),
+            Transfer(UUID.randomUUID(), chulsoo, key, from, to, Amount(amount), status, null, null, sentAt, sentAt, null),
         )
     }
+
+    private val stale = Duration.ofSeconds(10)   // 확인 기준 5초를 넘긴 나이
 
     private fun countByKey(key: IdempotencyKey): Int =
         jdbc.queryForObject("SELECT count(*) FROM transfer.transfer WHERE idempotency_key = ?", Int::class.java, key.value)!!
@@ -150,10 +157,10 @@ class TransferIdempotencyTest {
         assertEquals(1, fakeCore.calls.size)
     }
 
-    // ───────────── 처리 중: 그대로 반환 ─────────────
+    // ───────────── 처리 중·결과 불명, 보낸 지 5초 안: 그대로 반환 ─────────────
 
     @Test
-    fun `처리 중인 송금에 같은 키 - PROCESSING 그대로, core를 부르지 않는다 (클라이언트는 Location으로 조회)`() {
+    fun `처리 중인 송금에 같은 키 - 5초 안이면 PROCESSING 그대로, core에 송금도 조회도 안 한다`() {
         val key = newKey()
         val processing = existing(key, TransferStatus.PROCESSING)
 
@@ -163,49 +170,93 @@ class TransferIdempotencyTest {
         assertEquals(processing.id, result.transfer.id)
         assertEquals(TransferStatus.PROCESSING, result.transfer.status)
         assertTrue(fakeCore.calls.isEmpty())
+        assertTrue(fakeCore.lookups.isEmpty())
     }
 
-    // ───────────── 결과 불명: core에 재전송 ─────────────
-
     @Test
-    fun `결과 불명 송금에 같은 키 - 같은 송금 ID로 core에 재전송해서 확정한다`() {
+    fun `결과 불명 송금에 같은 키 - 5초 안이면 UNKNOWN 그대로 (core가 아직 처리 중일 수 있어 조회하면 오판)`() {
         val key = newKey()
         val unknown = existing(key, TransferStatus.UNKNOWN)
-        val entryId = UUID.randomUUID()
-        fakeCore.respond = { CoreTransferResult.Completed(entryId) }   // core: 이미 처리돼 있었다면 replayed로 같은 원장 ID를 준다
-
-        val result = request(key)
-
-        assertTrue(result.replayed)
-        assertEquals(unknown.id, fakeCore.calls.single().id)   // 새 송금 ID가 아니라 같은 ID = core 쪽에서도 멱등
-        assertEquals(TransferStatus.COMPLETED, result.transfer.status)
-        assertEquals(entryId, result.transfer.coreEntryId)
-        assertEquals(1, countByKey(key))
-    }
-
-    @Test
-    fun `결과 불명 재전송이 거절되면 - FAILED로 확정`() {
-        val key = newKey()
-        existing(key, TransferStatus.UNKNOWN)
-        fakeCore.respond = { CoreTransferResult.Rejected("INSUFFICIENT_BALANCE") }
-
-        val result = request(key)
-
-        assertEquals(TransferStatus.FAILED, result.transfer.status)
-        assertEquals("INSUFFICIENT_BALANCE", result.transfer.failureCode)
-    }
-
-    @Test
-    fun `결과 불명 재전송이 또 모름이면 - UNKNOWN 유지, 예외 없이 돌려준다`() {
-        val key = newKey()
-        val unknown = existing(key, TransferStatus.UNKNOWN)
-        fakeCore.respond = { CoreTransferResult.Unknown("read timeout") }
 
         val result = request(key)
 
         assertTrue(result.replayed)
         assertEquals(unknown.id, result.transfer.id)
         assertEquals(TransferStatus.UNKNOWN, result.transfer.status)
+        assertTrue(fakeCore.calls.isEmpty())
+        assertTrue(fakeCore.lookups.isEmpty())
+    }
+
+    // ───────────── 처리 중·결과 불명, 5초 지남: 조회로 확정 (재전송 없음) ─────────────
+
+    @Test
+    fun `결과 불명 5초 지남 - 조회해서 처리됐으면 COMPLETED, 같은 송금 ID로 묻고 재전송은 안 한다`() {
+        val key = newKey()
+        val unknown = existing(key, TransferStatus.UNKNOWN, age = stale)
+        val entryId = UUID.randomUUID()
+        fakeCore.lookupRespond = { CoreTransferLookupResult.Completed(entryId) }
+
+        val result = request(key)
+
+        assertTrue(result.replayed)
+        assertEquals(unknown.id, fakeCore.lookups.single().id)
+        assertTrue(fakeCore.calls.isEmpty(), "재전송 금지 (ADR-0005 결정 2)")
+        assertEquals(TransferStatus.COMPLETED, result.transfer.status)
+        assertEquals(entryId, result.transfer.coreEntryId)
+        assertEquals(1, countByKey(key))
+    }
+
+    @Test
+    fun `결과 불명 5초 지남 - 조회해서 안 됐으면 FAILED, 실패 코드 CORE_NOT_PROCESSED`() {
+        val key = newKey()
+        existing(key, TransferStatus.UNKNOWN, age = stale)
+        fakeCore.lookupRespond = { CoreTransferLookupResult.NotProcessed }
+
+        val result = request(key)
+
+        assertEquals(TransferStatus.FAILED, result.transfer.status)
+        assertEquals("CORE_NOT_PROCESSED", result.transfer.failureCode)
+        assertTrue(fakeCore.calls.isEmpty())
+    }
+
+    @Test
+    fun `결과 불명 5초 지남 - 조회도 실패하면 UNKNOWN 유지, 예외 없이 돌려준다`() {
+        val key = newKey()
+        val unknown = existing(key, TransferStatus.UNKNOWN, age = stale)
+        fakeCore.lookupRespond = { CoreTransferLookupResult.Unknown("read timeout") }
+
+        val result = request(key)
+
+        assertTrue(result.replayed)
+        assertEquals(unknown.id, result.transfer.id)
+        assertEquals(TransferStatus.UNKNOWN, result.transfer.status)
+    }
+
+    @Test
+    fun `처리 중 5초 지남 - 조회해서 처리됐으면 COMPLETED (core 커밋 뒤 저장 전에 죽은 경우)`() {
+        val key = newKey()
+        existing(key, TransferStatus.PROCESSING, age = stale)
+        val entryId = UUID.randomUUID()
+        fakeCore.lookupRespond = { CoreTransferLookupResult.Completed(entryId) }
+
+        val result = request(key)
+
+        assertEquals(TransferStatus.COMPLETED, result.transfer.status)
+        assertEquals(entryId, result.transfer.coreEntryId)
+        assertTrue(fakeCore.calls.isEmpty())
+    }
+
+    @Test
+    fun `처리 중 5초 지남 - 조회해서 안 됐으면 FAILED (core에 보내기 전에 죽은 경우)`() {
+        val key = newKey()
+        existing(key, TransferStatus.PROCESSING, age = stale)
+        fakeCore.lookupRespond = { CoreTransferLookupResult.NotProcessed }
+
+        val result = request(key)
+
+        assertEquals(TransferStatus.FAILED, result.transfer.status)
+        assertEquals("CORE_NOT_PROCESSED", result.transfer.failureCode)
+        assertTrue(fakeCore.calls.isEmpty())
     }
 
     // ───────────── 내용이 다름: 충돌 ─────────────

@@ -4,6 +4,7 @@ import lab.bank.transfer.FakeCoreConfiguration
 import lab.bank.transfer.FakeCorePostingPort
 import lab.bank.transfer.FakeTransferEventPublisher
 import lab.bank.transfer.TestcontainersConfiguration
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.domain.Amount
 import lab.bank.transfer.domain.IdempotencyKey
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -29,6 +31,7 @@ class TransferEventPublishingTest {
     @Autowired lateinit var transferUseCase: TransferUseCase
     @Autowired lateinit var fakeCore: FakeCorePostingPort
     @Autowired lateinit var publisher: FakeTransferEventPublisher
+    @Autowired lateinit var jdbc: JdbcTemplate
 
     private val requester = UserId("chulsoo")
     private val from = UUID.randomUUID()
@@ -69,15 +72,20 @@ class TransferEventPublishingTest {
     }
 
     @Test
-    fun `결과 불명이었다가 재요청으로 완료되면 그때 발행한다`() {
+    fun `결과 불명이었다가 재요청의 조회로 완료가 확인되면 그때 발행한다`() {
         val key = newKey()
         fakeCore.respond = { CoreTransferResult.Unknown("timeout") }
         val first = request(key)
-        fakeCore.respond = { CoreTransferResult.Completed(UUID.randomUUID()) }
+        assertTrue(publisher.published.isEmpty(), "UNKNOWN은 끝 상태가 아니라 발행하지 않는다")
 
-        request(key)   // 같은 키 재요청 → 같은 송금 ID로 core 재전송 → 완료
+        // 보낸 지 기준 시간(5초)이 지난 것으로 만든다 (기다리는 대신 보낸 시각을 과거로)
+        jdbc.update("UPDATE transfer.transfer SET created_at = created_at - interval '10 seconds' WHERE id = ?", first.id)
+        fakeCore.lookupRespond = { CoreTransferLookupResult.Completed(UUID.randomUUID()) }
+
+        request(key)   // 같은 키 재요청 → core 조회 → 완료 확인 (재전송 아님, ADR-0005)
 
         assertEquals(listOf(FakeTransferEventPublisher.Published(first.id, TransferStatus.COMPLETED, null)), publisher.published)
+        assertEquals(1, fakeCore.calls.size, "core 송금은 처음 한 번만")
     }
 
     @Test
