@@ -204,10 +204,17 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
   - HA(서버 3대) 뒤에는 "하나만 끄기" 전에 etcd 과반수가 남는지 따져야 한다 (`cluster-down.sh` 머리 주석).
   - Raycast는 PATH가 짧아 macOS 기본 `/bin/bash` 3.2로 돌 수 있다 → 연관 배열·`wait -n` 없이 작성.
 - Wake-on-LAN: Proxmox `enp5s0` (MAC `22:02:4d:07:2d:06`) 지원 모드 `pumbg`. 기본값이 `d`(꺼짐)라 `infra/bootstrap/enable-wol.sh`로 `wol g`를 켜고, systemd 서비스 `wol-enp5s0`로 부팅마다 다시 켜지게 했다.
-  - 매직 패킷은 브로드캐스트라 **맥북이 집 네트워크에 있어야** 한다.
+  - 매직 패킷은 브로드캐스트라 같은 LAN에서 보내야 한다 → 2026-11-23부터 **항상 노트북 bank-cp3가 대신 보낸다** (`cluster-up.sh` `wake()`가 SSH로 bank-cp3에서 실행). 맥북은 집 안이든 Tailscale로 밖이든 bank-cp3에 SSH만 되면 된다.
   - 2026-11-11 실제 테스트: Bank Lab Down으로 종료 → Bank Lab Up으로 원격 부팅 성공. **BIOS 설정 변경 없이 동작했다.** 재부팅 후 노드 4대 Ready, Argo CD 앱 4개 Synced/Healthy, hello v2 응답까지 자동으로 복구됐다.
   - 종료는 VM을 하나씩 정상 종료하느라 1~2분 걸린다 (바로 꺼지지 않는다고 당황하지 말 것).
-- **TODO (나중에): 집 밖에서 켜고 끄기.** Proxmox가 꺼져 있으면 매직 패킷을 대신 보내 줄 "항상 켜진 집 안의 무언가"가 필요하다. 후보: 공유기의 원격 WOL 기능 / 라즈베리파이 같은 저전력 기기 + Tailscale(VPN). Proxmox나 SSH 포트를 인터넷에 직접 열지는 않는다 (보안).
+- **원격 접속 (Tailscale, 2026-11-23):** 공유기 포트는 하나도 열지 않는다.
+  - bank-cp3 = 서브넷 라우터: `tailscale up --advertise-routes=172.30.1.0/24 --hostname=bank-cp3`, IP 포워딩은 `/etc/sysctl.d/99-tailscale.conf`. 관리 콘솔에서 경로 승인 + 키 만료 끔. Tailscale 주소 `100.100.83.88`
+  - 맥북: Tailscale 앱(`brew install --cask tailscale`), 같은 계정. kubeconfig·ssh·nip.io 주소를 바꾸지 않고 그대로 쓴다 (집 안에서는 와이파이 경로가 이겨서 Tailscale을 안 탄다)
+  - `cluster-status.sh`도 노트북을 거친다: 노트북 먼저(못 붙으면 "Tailscale 확인"을 띄우고 멈춤, 꺼짐과 못 닿음을 구분하려고) → 호스트·컨트롤 플레인 VM은 노트북에서 ping → 켜진 호스트만 `ssh -J`(노트북 점프)로 VM 목록. 컨트롤 플레인이 꺼져 있으면 kubectl을 건너뛴다 (재시도로 22초 → 9초)
+  - 확인 (2026-11-23): 집 안에서 맥북 → bank-cp3 직접 연결 8ms (릴레이 아님). 밖(카페 `192.168.219.0/24`)에서도 직접 연결 21ms, `ssh ubuntu@172.30.1.202`·`cluster-status.sh` 동작. **밖에서 꺼진 클러스터 켜기 성공**: 노트북 WOL → 두 호스트 부팅 → 노드 6대 Ready, Argo CD 앱 전부 Synced/Healthy (약 2분)
+  - 고친 구멍 (2026-11-23): 막 부팅한 호스트는 SSH가 Proxmox 서비스보다 먼저 열려 `qm list`가 실패할 수 있는데, 스크립트가 실패를 빈 목록으로 읽어 "시작할 VM 없음"이라고 했다 → 성공할 때까지 재시도, 1분 넘으면 ⚠️
+  - 한계: 밖의 LAN도 `172.30.1.0/24`(KT 기본 대역)이면 겹쳐서 못 들어간다 (pitfalls 35). 그땐 `ssh ubuntu@100.100.83.88`로 점프
+  - 다른 사람에게 공개(시연)는 Cloudflare Tunnel + Access로 따로 (CLAUDE.md 백로그). 원리: `docs/learning/tailscale-and-nat.md`
 - VM은 `on_boot = false`라서 호스트만 켜면 VM은 꺼진 채로 있다 → cluster-up.sh가 켠다.
 
 ### 배포 구조 (GitOps)

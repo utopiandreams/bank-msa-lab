@@ -5,14 +5,16 @@
 #
 # 호스트마다: Wake-on-LAN → SSH 응답 대기 → 그 호스트의 bank-* VM을 한꺼번에 시작.
 # 호스트끼리는 서로 기다리지 않는다 (동시에 부팅). 한 대가 안 켜져도 나머지는 계속 간다.
-# 맥북이 집 네트워크(172.30.1.0/24)에 있어야 Wake-on-LAN 패킷이 닿는다.
+# Wake-on-LAN은 노트북(bank-cp3)이 대신 보낸다. 맥북은 집 안이든 Tailscale로 밖이든 노트북에 SSH만 되면 된다.
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lab.env"
 
 targets=$(resolve_targets "$@") || exit 2
 
 wake() {   # 매직 패킷: FF x6 + MAC x16, 브로드캐스트로
-  python3 - "$1" "$BROADCAST" <<'PY'
+  # 항상 노트북(bank-cp3)이 보낸다 (2026-11-23): 브로드캐스트는 L2라 Tailscale(L3)을 못 넘는다.
+  # 맥북이 집 안이든 밖이든 같은 경로로 켜지게, 집 안에 항상 켜진 노트북을 발신기로 쓴다
+  ssh "${SSH_OPTS[@]}" "$WITNESS_HOST" python3 - "$1" "$BROADCAST" <<'PY'
 import socket, sys
 mac = bytes.fromhex(sys.argv[1].replace(":", ""))
 packet = b"\xff" * 6 + mac * 16
@@ -42,8 +44,18 @@ host_up() {
 
   # bank-* VM 중 꺼진 것을 한꺼번에 시작. 컨트롤 플레인을 먼저 기다릴 필요는 없다:
   # 워커(k3s agent)는 서버가 뜰 때까지 알아서 재접속한다
-  local ids
-  ids=$(host_ssh "qm list" 2>/dev/null | awk '$2 ~ /^bank-/ && $3 == "stopped" {print $1}' | tr '\n' ' ')
+  # 막 부팅한 호스트는 SSH가 Proxmox 서비스(pmxcfs)보다 먼저 열려 qm list가 실패할 수 있다.
+  # 실패를 "빈 목록"으로 읽으면 "시작할 VM 없음"이라고 거짓말하게 된다 (2026-11-23 proxmox2) → 성공할 때까지 재시도
+  local list="" ids
+  for _ in $(seq 12); do
+    list=$(host_ssh "qm list" 2>/dev/null) && break
+    list=""; sleep 5
+  done
+  if [ -z "$list" ]; then
+    log "⚠️ 1분 동안 qm list 실패 (Proxmox 서비스가 안 뜸?). VM 상태를 모름"
+    return 1
+  fi
+  ids=$(echo "$list" | awk '$2 ~ /^bank-/ && $3 == "stopped" {print $1}' | tr '\n' ' ')
   if [ -z "${ids// /}" ]; then
     log "시작할 VM 없음"
     return 0
