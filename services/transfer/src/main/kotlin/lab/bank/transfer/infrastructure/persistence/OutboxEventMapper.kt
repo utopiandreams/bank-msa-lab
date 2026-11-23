@@ -14,6 +14,7 @@ object OutboxEventMapper {
         createdAt = event.createdAt,
         publishedAt = event.publishedAt,
         version = event.version,
+        traceParent = event.traceParent,
     )
 
     // 복원용 생성자: 저장된 그대로 되살린다 (markPublished 검사를 거치지 않음)
@@ -26,5 +27,6 @@ object OutboxEventMapper {
         createdAt = entity.createdAt,
         publishedAt = entity.publishedAt,
         version = entity.version,
+        traceParent = entity.traceParent,
     )
 }

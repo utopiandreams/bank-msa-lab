@@ -22,6 +22,9 @@ dependencies {
 	runtimeOnly("org.postgresql:postgresql")
 	implementation(project(":libs:common"))                                  // 이벤트 스키마 (ADR-0003)
 	implementation("org.springframework.boot:spring-boot-starter-kafka")    // 송금 끝 이벤트 발행
+	// 9주 차 (2026-11-24 승인): Outbox 행에 trace 문맥을 적고 릴레이에서 이어 붙이기. API만 (SDK 아님): 실제 동작은 Java 에이전트가 이어 준다.
+	// 버전은 Boot가 관리(1.62.0). 에이전트 2.33.1이 API 1.65까지 이어 주므로 그보다 낮아야 한다 (높으면 새 메서드가 아무 일도 안 함)
+	implementation("io.opentelemetry:opentelemetry-api")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")

@@ -6,6 +6,7 @@ import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.InterbankTransferStatus
 import lab.bank.transfer.domain.OutboxEvent
 import lab.bank.transfer.domain.Transfer
+import lab.bank.transfer.infrastructure.tracing.TraceParents
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
@@ -48,6 +49,7 @@ class OutboxTransferEventPublisher(
                     messageKey = transfer.id.toString(),
                     payload = payload,
                     now = Instant.now(),
+                    traceParent = TraceParents.current(),   // 지금 요청의 trace 문맥을 행에 적는다 (릴레이가 이어 붙임)
                 )
             )
         )
@@ -80,6 +82,7 @@ class OutboxTransferEventPublisher(
                     messageKey = transfer.id.toString(),
                     payload = payload,
                     now = Instant.now(),
+                    traceParent = TraceParents.current(),   // 지금 요청의 trace 문맥을 행에 적는다 (릴레이가 이어 붙임)
                 )
             )
         )

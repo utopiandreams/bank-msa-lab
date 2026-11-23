@@ -11,6 +11,7 @@ import java.util.UUID
  *
  * id = eventId. 생성할 때 한 번 정한다. 릴레이가 재시도해도 같은 eventId로 나가야 컨슈머가 중복을 거른다 (pitfalls 29).
  * payload는 이미 직렬화된 JSON: 릴레이는 내용을 모르고 topic·key·payload를 그대로 옮기기만 한다.
+ * traceParent는 이 이벤트를 만든 요청의 trace 문맥(W3C 문자열, 9주 차). 업무와 무관한 운반용 칸이라 도메인은 해석하지 않는다.
  */
 class OutboxEvent(
     val id: UUID,
@@ -21,6 +22,7 @@ class OutboxEvent(
     val createdAt: Instant,
     publishedAt: Instant?,
     val version: Long?,        // 새 행은 null → INSERT (Transfer와 같은 이유)
+    val traceParent: String? = null,   // 없으면 릴레이가 새 trace로 발행
 ) {
     // null = 아직 안 보냄
     var publishedAt: Instant? = publishedAt
@@ -38,7 +40,10 @@ class OutboxEvent(
     }
 
     companion object {
-        fun create(eventId: UUID, aggregateId: UUID, topic: String, messageKey: String, payload: String, now: Instant) =
+        fun create(
+            eventId: UUID, aggregateId: UUID, topic: String, messageKey: String, payload: String, now: Instant,
+            traceParent: String? = null,
+        ) =
             OutboxEvent(
                 id = eventId,
                 aggregateId = aggregateId,
@@ -48,6 +53,7 @@ class OutboxEvent(
                 createdAt = now,
                 publishedAt = null,
                 version = null,
+                traceParent = traceParent,
             )
     }
 }

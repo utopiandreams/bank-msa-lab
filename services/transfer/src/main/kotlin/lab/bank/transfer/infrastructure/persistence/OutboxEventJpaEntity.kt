@@ -37,4 +37,8 @@ class OutboxEventJpaEntity(
     // null이면 Spring Data가 새 엔티티로 보고 INSERT (ID를 앱이 만들기 때문)
     @Version
     var version: Long?,
+
+    // 만든 요청의 W3C traceparent (V7). 릴레이가 이걸 부모로 발행한다
+    @Column(updatable = false, length = 64)
+    var traceParent: String? = null,
 )
