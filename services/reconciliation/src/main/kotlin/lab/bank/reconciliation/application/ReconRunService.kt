@@ -2,7 +2,9 @@ package lab.bank.reconciliation.application
 
 import lab.bank.common.event.ExtractCompletedEvent
 import lab.bank.reconciliation.domain.CarrySnapshot
+import lab.bank.reconciliation.domain.CoreEntryRow
 import lab.bank.reconciliation.domain.Evaluation
+import lab.bank.reconciliation.domain.ExternalRow
 import lab.bank.reconciliation.domain.ItemKind
 import lab.bank.reconciliation.domain.TransferCoreMatcher
 import lab.bank.reconciliation.domain.TransferExternalMatcher
@@ -79,8 +81,8 @@ class ReconRunService(
             val carried = active.mapValues { it.value.snapshot }
             @Suppress("UNCHECKED_CAST")
             val evaluations: List<Evaluation> =
-                if (pair == PAIR_CORE) TransferCoreMatcher.match(transfers, other as List<lab.bank.reconciliation.domain.CoreEntryRow>, carried)
-                else TransferExternalMatcher.match(transfers, other as List<lab.bank.reconciliation.domain.ExternalRow>, carried)
+                if (pair == PAIR_CORE) TransferCoreMatcher.match(transfers, other as List<CoreEntryRow>, carried)
+                else TransferExternalMatcher.match(transfers, other as List<ExternalRow>, carried)
 
             var matched = 0
             for (e in evaluations) {
