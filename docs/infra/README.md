@@ -193,8 +193,12 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 | 상태: 물리 장비 3대(proxmox·proxmox2·노트북 전원/배터리) / VM / 노드·메모리 / Argo CD 앱 | `infra/scripts/cluster-status.sh` | Bank Lab Status 📊 |
 | Argo CD 화면 열기 (Chrome) | `infra/scripts/raycast/bank-argocd.sh` | Bank Argo CD 🐙 |
 | Grafana 화면 열기 (Chrome) + admin 비밀번호 클립보드 복사 | `infra/scripts/raycast/bank-grafana.sh` | Bank Grafana 📈 |
+| 평소 트래픽 켜기·끄기·단계 (맥북 → Ingress, 평상시 / 1~3단계는 정한 시간 뒤 평상시로) | `load-test/steady/steadyctl.sh normal\|1\|2\|3\|stop\|status` | Bank Traffic 🚦 (드롭다운) |
 
 - Raycast 등록: Raycast 설정 → Extensions → Script Commands → Add Directories → `infra/scripts/raycast` 선택
+- **평소 트래픽 (2026-11-26, 운영 모드):** 부하는 클러스터 밖 맥북에서 준다 (클러스터 안에 두면 노드 장애 때 같이 죽는다, pitfalls 43). `steadyctl.sh`가 launchd 에이전트 `lab.bank.steady-traffic`로 등록해 터미널을 닫거나 재시작해도 계속 돈다. 상태·기록은 `~/.bank-lab/steady/` (runner.log, logs/)
+  - 실행 파일을 `~/.bank-lab/steady/run/`에 복사해서 돌린다: 저장소가 `~/Desktop` 아래라 launchd 작업은 macOS 개인정보 보호(TCC)에 막힌다
+  - **로컬 네트워크 권한:** launchd로 띄운 프로그램이 집 네트워크(172.30.1.x)에 처음 붙으면 macOS가 프로그램마다 허락을 받는다. 허락 전엔 `connect: no route to host` (네트워크 문제처럼 보여서 헷갈린다). 시스템 설정 → 개인정보 보호 및 보안 → 로컬 네트워크에서 **k6, kubectl** 켜기. 터미널·Raycast에서 직접 돌리면 그 앱의 권한을 써서 안 보인다
 - 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
 - **호스트 단위 제어 + 병렬 (2026-11-18 변경):** 대상은 `all`(기본) / `proxmox` / `proxmox2`. 호스트마다 백그라운드로 동시에 진행하고, 출력 줄 앞에 `[호스트]`가 붙는다. 한 대가 안 켜져도 나머지는 계속 간다.
   - 켜기: VM은 컨트롤 플레인을 기다리지 않고 한꺼번에 시작한다 (k3s agent가 서버에 알아서 재접속). k8s Ready 확인은 컨트롤 플레인이 있는 proxmox가 끝나는 즉시 한다 (proxmox2의 5분 대기에 묶이지 않게).
