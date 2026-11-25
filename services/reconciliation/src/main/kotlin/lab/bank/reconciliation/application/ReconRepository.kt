@@ -13,14 +13,14 @@ interface ReconRepository {
     /** (날짜, 출처)의 가장 마지막에 도착한 추출 */
     fun latestArrival(date: LocalDate, source: String): ExtractArrival?
 
-    /** 두 출처의 최신 추출이 다 왔는데 그 조합으로 아직 돌지 않은 날짜, 오래된 순 (이월은 날짜 순서에 기대서) */
-    fun pendingDates(): List<LocalDate>
+    /** 쌍의 두 출처(transfer + 상대) 최신 추출이 다 왔는데 그 조합으로 아직 돌지 않은 날짜, 오래된 순 (이월은 날짜 순서에 기대서) */
+    fun pendingDates(pair: String, otherSource: String): List<LocalDate>
 
-    fun doneRun(date: LocalDate): RunRecord?
-    fun latestDoneDate(): LocalDate?
+    fun doneRun(pair: String, date: LocalDate): RunRecord?
+    fun latestDoneDate(pair: String): LocalDate?
 
     /** 같은 날짜 대사가 두 곳에서 동시에 돌지 않게 (트랜잭션 끝날 때 풀리는 잠금) */
-    fun lockDate(date: LocalDate)
+    fun lockDate(pair: String, date: LocalDate)
 
     fun insertRun(run: NewRun)
     fun markSuperseded(runId: UUID)
@@ -37,10 +37,12 @@ interface ReconRepository {
 
 data class NewRun(
     val id: UUID,
+    val pair: String,
     val businessDate: LocalDate,
     val status: String,
     val transferExtractId: UUID,
-    val coreExtractId: UUID,
+    val coreExtractId: UUID?,
+    val externalExtractId: UUID?,
     val logicVersion: Int,
     val transferRows: Long?,
     val coreRows: Long?,

@@ -46,7 +46,7 @@ class JdbcReconRepository(
             .param("date", Date.valueOf(date)).param("source", source)
             .query { rs, _ -> arrival(rs) }.optional().orElse(null)
 
-    override fun pendingDates(): List<LocalDate> =
+    override fun pendingDates(pair: String, otherSource: String): List<LocalDate> =
         jdbc.sql(
             """
             WITH latest AS (
@@ -55,42 +55,43 @@ class JdbcReconRepository(
               ORDER BY business_date, source, received_at DESC
             )
             SELECT t.business_date
-            FROM latest t JOIN latest c ON c.business_date = t.business_date AND c.source = 'core'
+            FROM latest t JOIN latest o ON o.business_date = t.business_date AND o.source = :other
             WHERE t.source = 'transfer'
               AND NOT EXISTS (
                 SELECT 1 FROM reconciliation.recon_run r
-                WHERE r.business_date = t.business_date AND r.transfer_extract_id = t.extract_id AND r.core_extract_id = c.extract_id
+                WHERE r.pair = :pair AND r.business_date = t.business_date AND r.transfer_extract_id = t.extract_id
+                  AND coalesce(r.core_extract_id, r.external_extract_id) = o.extract_id
               )
             ORDER BY t.business_date
             """,
-        ).query { rs, _ -> rs.getDate(1).toLocalDate() }.list()
+        ).param("pair", pair).param("other", otherSource).query { rs, _ -> rs.getDate(1).toLocalDate() }.list()
 
-    override fun doneRun(date: LocalDate): RunRecord? =
-        jdbc.sql("SELECT id, business_date, status, transfer_extract_id, core_extract_id FROM reconciliation.recon_run WHERE business_date = :date AND status = 'DONE'")
-            .param("date", Date.valueOf(date))
-            .query { rs, _ -> RunRecord(rs.getObject("id", UUID::class.java), rs.getDate("business_date").toLocalDate(), rs.getString("status"),
-                rs.getObject("transfer_extract_id", UUID::class.java), rs.getObject("core_extract_id", UUID::class.java)) }
+    override fun doneRun(pair: String, date: LocalDate): RunRecord? =
+        jdbc.sql("SELECT id, pair, business_date, status FROM reconciliation.recon_run WHERE pair = :pair AND business_date = :date AND status = 'DONE'")
+            .param("pair", pair).param("date", Date.valueOf(date))
+            .query { rs, _ -> RunRecord(rs.getObject("id", UUID::class.java), rs.getString("pair"), rs.getDate("business_date").toLocalDate(), rs.getString("status")) }
             .optional().orElse(null)
 
-    override fun latestDoneDate(): LocalDate? =
-        jdbc.sql("SELECT max(business_date) FROM reconciliation.recon_run WHERE status = 'DONE'")
+    override fun latestDoneDate(pair: String): LocalDate? =
+        jdbc.sql("SELECT max(business_date) FROM reconciliation.recon_run WHERE pair = :pair AND status = 'DONE'")
+            .param("pair", pair)
             .query { rs, _ -> rs.getDate(1)?.toLocalDate() }.single()
 
-    override fun lockDate(date: LocalDate) {
-        jdbc.sql("SELECT pg_advisory_xact_lock(:k)").param("k", date.toEpochDay()).query { _, _ -> 1 }.list()
+    override fun lockDate(pair: String, date: LocalDate) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(:p, :k)").param("p", pair.hashCode()).param("k", date.toEpochDay().toInt()).query { _, _ -> 1 }.list()
     }
 
     override fun insertRun(run: NewRun) {
         jdbc.sql(
             """
             INSERT INTO reconciliation.recon_run
-              (id, business_date, status, transfer_extract_id, core_extract_id, logic_version, transfer_rows, core_rows, carried_in, matched,
+              (id, pair, business_date, status, transfer_extract_id, core_extract_id, external_extract_id, logic_version, transfer_rows, core_rows, carried_in, matched,
                open_items, escalated_items, trial_balance_ok, failure_reason, started_at, finished_at)
-            VALUES (:id, :date, :status, :t, :c, :v, :tr, :cr, :ci, :m, :o, :e, :tb, :fr, :sa, :fa)
+            VALUES (:id, :pair, :date, :status, :t, :c, :x, :v, :tr, :cr, :ci, :m, :o, :e, :tb, :fr, :sa, :fa)
             """,
         )
             .param("id", run.id).param("date", Date.valueOf(run.businessDate)).param("status", run.status)
-            .param("t", run.transferExtractId).param("c", run.coreExtractId).param("v", run.logicVersion)
+            .param("pair", run.pair).param("t", run.transferExtractId).param("c", run.coreExtractId).param("x", run.externalExtractId).param("v", run.logicVersion)
             .param("tr", run.transferRows).param("cr", run.coreRows).param("ci", run.carriedIn).param("m", run.matched)
             .param("o", run.openItems).param("e", run.escalatedItems).param("tb", run.trialBalanceOk).param("fr", run.failureReason)
             .param("sa", Timestamp.from(run.startedAt)).param("fa", Timestamp.from(run.finishedAt))

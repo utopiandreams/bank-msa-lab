@@ -28,6 +28,10 @@ reconciliation:
     # 클러스터는 Secret garage-secrets → STORAGE_ACCESS_KEY_ID / STORAGE_SECRET_ACCESS_KEY (기본값은 로컬·테스트용)
     access-key-id: ${STORAGE_ACCESS_KEY_ID:local}
     secret-access-key: ${STORAGE_SECRET_ACCESS_KEY:local}
+  external:
+    enabled: true
+    base-url: ${BANK_MOCK_BASE_URL:http://bank-mock}   # 외부 정산 파일 채널 (설계 연습 09 결정 19)
+    cron: "0 0 1 * * *"   # 매일 01:00 (Asia/Seoul) 전날 파일
   worker:
     enabled: true
     poll-interval: 60s   # 두 출처가 다 도착했는지 보는 주기

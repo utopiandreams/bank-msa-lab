@@ -1,9 +1,13 @@
 package lab.bank.reconciliation.application
 
 import lab.bank.reconciliation.domain.CoreEntryRow
+import lab.bank.reconciliation.domain.ExternalRow
 import lab.bank.reconciliation.domain.TransferRow
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.HexFormat
 import java.util.UUID
 
@@ -49,6 +53,37 @@ object ExtractFiles {
         checkSum(arrival, rows.sumOf { it.amount })
         return rows
     }
+
+    /**
+     * 외부 정산 파일 번역 (ACL, bank-mock SettlementFile 형식: H/D/T 레코드, "|" 구분, 처리 시각 yyyyMMddHHmmss Asia/Seoul).
+     * 받을 때(수신 작업)와 대사할 때 둘 다 쓴다: 받을 때는 trailer로 "다 왔나"를, 대사할 때는 우리가 기록한 체크섬으로 "그 파일 그대로인가"를 본다
+     */
+    fun parseExternal(bytes: ByteArray): List<ExternalRow> {
+        val lines = String(bytes, Charsets.UTF_8).lines().filter { it.isNotEmpty() }
+        if (lines.size < 2 || !lines.first().startsWith("H|") || !lines.last().startsWith("T|")) throw ExtractFileException("외부 파일 형식이 아님 (헤더·트레일러 없음)")
+        val rows = lines.drop(1).dropLast(1).map { line ->
+            val f = line.split("|")
+            if (f.size != 8 || f[0] != "D") throw ExtractFileException("외부 파일 건별 줄 형식이 아님: $line")
+            try {
+                ExternalRow(f[1], f[2], f[3], f[4].toLong(), f[5] == "A", f[6].ifEmpty { null },
+                    LocalDateTime.parse(f[7], EXTERNAL_TIME).atZone(EXTERNAL_ZONE).toInstant())
+            } catch (e: Exception) { throw ExtractFileException("외부 파일 줄을 읽을 수 없음: $line", e) }
+        }
+        val trailer = lines.last().split("|")
+        if (trailer.size != 3 || trailer[1].toLong() != rows.size.toLong() || trailer[2].toLong() != rows.sumOf { it.amount }) {
+            throw ExtractFileException("외부 파일 트레일러와 내용이 다름: ${lines.last()} (건수 ${rows.size}, 합계 ${rows.sumOf { it.amount }})")
+        }
+        return rows
+    }
+
+    fun parseExternal(arrival: ExtractArrival, bytes: ByteArray): List<ExternalRow> {
+        val sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+        if (sha != arrival.sha256) throw ExtractFileException("체크섬 다름: ${arrival.objectKey}")
+        return parseExternal(bytes)
+    }
+
+    private val EXTERNAL_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+    private val EXTERNAL_ZONE = ZoneId.of("Asia/Seoul")
 
     private fun checkSum(arrival: ExtractArrival, sum: Long) {
         if (sum != arrival.amountSum) throw ExtractFileException("금액 합계 다름: 알림 ${arrival.amountSum}, 파일 $sum")

@@ -14,5 +14,5 @@ data class Evaluation(
     val snapshot: CarrySnapshot,        // 이월할 때 다음 날 다시 판정하려고 남기는 원본 줄들
 ) {
     val matched: Boolean get() = kind == null
-    val immediate: Boolean get() = kind == ItemKind.UNEXPECTED_ENTRY || kind == ItemKind.MISMATCH || kind == ItemKind.TRIAL_BALANCE
+    val immediate: Boolean get() = kind?.immediate == true
 }
