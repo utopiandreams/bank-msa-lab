@@ -15,4 +15,4 @@ OUT="data/steady-accounts.json"
 
 PREFIX=steady OUT="$OUT" ./seed-accounts.sh "$N" "$BALANCE"
 kubectl -n bank create configmap steady-accounts --from-file=accounts.json="$OUT" -o yaml --dry-run=client | kubectl apply -f -
-echo "✅ ConfigMap steady-accounts (계좌 $N개). 트래픽 파드가 이미 떠 있으면: kubectl -n bank rollout restart deploy/steady-traffic"
+echo "✅ ConfigMap steady-accounts (계좌 ${N}개). 트래픽 파드가 이미 떠 있으면: kubectl -n bank rollout restart deploy/steady-traffic"
