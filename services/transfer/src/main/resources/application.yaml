@@ -39,6 +39,19 @@ bank-mock:
   connect-timeout: 1s
   read-timeout: 3s             # 임시값. 넘으면 외부가 처리했는지 모름 → 보상하지 않고 INTERBANK_REQUESTED에 남는다. 15주 차 지연 실험에서 조정
 
+# 대사 추출 파일 저장소 (ADR-0006, infrastructure/storage). 클러스터는 values.yaml의 STORAGE_* (키는 Secret garage-secrets)
+storage:
+  endpoint: ${STORAGE_ENDPOINT:http://localhost:3900}
+  region: ${STORAGE_REGION:garage}
+  bucket: ${STORAGE_BUCKET:daily-extracts}
+  access-key-id: ${STORAGE_ACCESS_KEY_ID:local}
+  secret-access-key: ${STORAGE_SECRET_ACCESS_KEY:local}
+
+# 대사 일자별 추출 (infrastructure/extract/DailyExtractScheduler)
+extract:
+  enabled: true
+  cron: "0 5 0 * * *"   # 매일 00:05 (Asia/Seoul) 전날 분
+
 # 결과 불명 해소 (8주 차 ADR-0005, infrastructure/resolution/ResolutionProperties)
 transfer:
   resolution:

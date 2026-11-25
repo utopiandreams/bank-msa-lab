@@ -26,4 +26,13 @@ class FakeCoreConfiguration {
     @Bean
     @Primary
     fun fakeExternalBankPort() = FakeExternalBankPort()
+
+    // 대사 추출: 저장소(Garage)와 완료 알림(Kafka)
+    @Bean
+    @Primary
+    fun fakeExtractStorage() = FakeExtractStorage()
+
+    @Bean
+    @Primary
+    fun fakeExtractCompletedPublisher() = FakeExtractCompletedPublisher()
 }
