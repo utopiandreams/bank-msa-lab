@@ -5,7 +5,7 @@ image:
   repository: ghcr.io/utopiandreams/reconciliation
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
   # 첫 push 전에는 이미지가 없어 잠깐 ImagePullBackOff → CI가 태그를 커밋하면 풀린다
-  tag: "05a0ebc2606ae7c002a3065a1ce6ff57b6ea8541"
+  tag: "048501b8ce82e373440f08eb66e4de26a635f8ce"
 
 # 롤링(새 파드 먼저)이 아니라 옛 파드를 내린 뒤 띄운다: 배포 중 잠깐 파드 2개가 같은 날짜 대사를 잡지 않게 (ADR-0006 결정 16).
 # 대사는 몇 초 멈춰도 되는 배치
