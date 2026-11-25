@@ -61,3 +61,10 @@ server:
       enabled: true
     threads:
       max: 200   # 기본값과 같지만 명시 (pitfalls 13 보이지 않는 기본값). 이 선에 붙으면 대기열이 생긴다
+
+logging:
+  pattern:
+    # 로그 줄마다 trace_id·span_id (2026-11-25, 10주 차). 값은 OTel 에이전트가 요청마다 MDC에 넣어 준다 (앱 코드 변경 없음).
+    # Boot 기본 패턴의 "상관관계" 자리에 들어간다. 노드의 Alloy가 trace_id를 꺼내 Loki 구조화 메타데이터로 → Grafana에서 로그 ↔ 트레이스 클릭 이동
+    # 요청 밖(스케줄러 회차 등)에서 찍힌 줄은 값이 비어 [trace_id= span_id=]로 나온다
+    correlation: "[trace_id=%X{trace_id:-} span_id=%X{span_id:-}] "
