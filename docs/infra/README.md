@@ -257,6 +257,7 @@ deploy/
 │       ├── transfer-db.yaml      (wave 1, transfer 전용 Postgres)
 │       ├── transfer.yaml         (wave 2, 공통 차트 + transfer values)
 │       ├── redis.yaml            (wave 1, 분산 락 저장소 StatefulSet, 2026-11-22)
+│       ├── garage.yaml           (wave 1, S3 호환 저장소 StatefulSet, 대사 추출 파일, 2026-11-25)
 │       └── ... gateway, notification(+db), bank-mock, kafka, 관측성 (파일 목록이 곧 설치 목록)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
 ├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
@@ -307,6 +308,27 @@ GitOps 함정 메모:
 - 인증 없음 (클러스터 내부 전용, 학습 타협). NetworkPolicy 백로그에서 core만 접근하게 막는다
 - 운영형(오퍼레이터·Sentinel·복제)은 17주 차 "Redis 페일오버" 실험 때. AWS로 치면 ElastiCache
 - 확인: `kubectl -n bank exec redis-0 -- redis-cli ping`, 락 키 보기 `redis-cli --scan --pattern 'lock:*'`
+
+### 오브젝트 저장소 (Garage, 2026-11-25, 8주 차 대사)
+
+- `deploy/platform/garage/garage.yaml`: `dxflrs/garage:v2.6.0` 단일 노드 StatefulSet, Service `garage.bank` (S3 API `:3900`, 관리 `:3903`). 버킷 `daily-extracts` (대사용 일자별 추출 파일, ADR-0006). AWS로 치면 S3
+- **왜 Garage (2026-11-25 개발자 결정, 설계 연습 09 결정 18):** 가볍다(유휴 메모리 약 5Mi, 메모리가 클러스터 병목). MinIO 커뮤니티판은 2025-10부터 공식 이미지·바이너리 배포 중단·유지보수 모드·CVE 미패치 (단일 회사 오픈 코어 → 수익 모델에 따라 무료판이 줄어드는 위험. Redis→Valkey, Elasticsearch→OpenSearch, Terraform→OpenTofu와 같은 패턴). Ceph RGW는 메모리가 과하다. 앱은 S3 API(AWS SDK)로 짜서 AWS S3로 옮겨도 주소·키만 바뀐다
+- **차트 대신 매니페스트:** v2.3.0부터 `garage server --single-node --default-bucket`이 레이아웃·기본 키·기본 버킷을 첫 기동 때 만든다 (로그 "Created initial layout", "Creating default bucket"). 공식 차트는 다중 노드용 CRD와 수동 레이아웃 절차가 딸려 온다
+- **비밀값 (GitOps 밖, gateway JWT와 같은 한계):** 클러스터에서 한 번 만든다. 키 ID는 `GK` + 32자리 hex (공식 quick start 형식)
+  ```bash
+  kubectl -n bank create secret generic garage-secrets \
+    --from-literal=rpc-secret="$(openssl rand -hex 32)" \
+    --from-literal=admin-token="$(openssl rand -base64 32)" \
+    --from-literal=access-key-id="GK$(openssl rand -hex 16)" \
+    --from-literal=secret-access-key="$(openssl rand -hex 32)"
+  ```
+  서비스는 공통 차트 `secretEnv`로 `access-key-id`·`secret-access-key`를 받는다. **키 하나를 모든 서비스가 같이 쓴다** (학습 타협. 실무는 서비스마다 키, 추출 쪽은 쓰기만·대사는 읽기만)
+- **확인한 것 (2026-11-25, aws-cli 파드로):**
+  - 올리기·읽기·목록·지우기 정상. 클라이언트 설정: `AWS_ENDPOINT_URL=http://garage.bank:3900`, `AWS_DEFAULT_REGION=garage`, 경로 방식(path-style)
+  - ⚠️ **덮어쓰기를 막을 수단이 저장소에 없다.** `put-object --if-none-match '*'`(있으면 쓰지 마라)를 **무시하고 덮어썼다** (응답 200, 내용이 바뀜). 버킷 버전 관리도 없음(`get-bucket-versioning` 빈 응답, 공식 호환표 "Missing"). → ADR-0006의 "파일은 증거라 덮어쓰지 않는다"는 **앱이 지킨다**: 객체 키를 매번 새로 만들고(예: `<출처>/<날짜>/<추출 ID>.jsonl`) 완료 이벤트가 그 키와 체크섬을 가리키게 하면, 다시 추출해도 이전 파일이 남는다
+  - local-path는 PVC 크기(5Gi)를 강제하지 않는다: Garage가 노드 디스크 전체(76.4GiB)를 용량으로 본다
+- **한계:** `replication_factor = 1`(복제 없음) + local-path(노드에 묶임) → garage-0이 올라간 노드(지금 bank-w4)의 디스크를 잃으면 파일도 잃는다. 실무라면 3복제 + 다른 장애 영역. Argo `prune: false` (Git에서 실수로 지워도 저장소가 안 사라지게)
+- 확인 명령: `kubectl -n bank exec garage-0 -- /garage status`, `kubectl -n bank exec garage-0 -- /garage bucket info daily-extracts`, 헬스 `kubectl -n bank port-forward svc/garage 3903 & curl localhost:3903/health`
 
 ### 관측성 기본 스택 (2026-11-18, 아직 미적용)
 
