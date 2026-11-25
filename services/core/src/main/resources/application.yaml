@@ -10,6 +10,29 @@ spring:
   #   테스트:   Testcontainers @ServiceConnection (TestcontainersConfiguration)
   lifecycle:
     timeout-per-shutdown-phase: 30s   # preStop 5초 + 30초 < terminationGracePeriodSeconds 45초 (deploy/helm/spring-service)
+  # Kafka: 대사 추출 완료 알림 발행만 (ADR-0006, extract/infrastructure/KafkaExtractCompletedPublisher). 설정은 transfer와 같은 이유
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:bank-kafka-kafka-bootstrap:9092}
+    producer:
+      acks: all
+      properties:
+        "[enable.idempotence]": true
+        "[max.block.ms]": 1000            # 브로커에 못 붙을 때 send()가 막히는 최대 시간 (pitfalls 20)
+        "[request.timeout.ms]": 3000
+        "[delivery.timeout.ms]": 5000
+
+# 대사 추출 파일 저장소 (ADR-0006, extract/infrastructure). 클러스터는 values.yaml의 STORAGE_* (키는 Secret garage-secrets)
+storage:
+  endpoint: ${STORAGE_ENDPOINT:http://localhost:3900}
+  region: ${STORAGE_REGION:garage}
+  bucket: ${STORAGE_BUCKET:daily-extracts}
+  access-key-id: ${STORAGE_ACCESS_KEY_ID:local}
+  secret-access-key: ${STORAGE_SECRET_ACCESS_KEY:local}
+
+# 대사 일자별 추출 (extract/infrastructure/DailyExtractScheduler)
+extract:
+  enabled: true
+  cron: "0 5 0 * * *"   # 매일 00:05 (Asia/Seoul) 전날 분
 
 # 쿠버네티스(프로브)·Prometheus(지표)가 기대는 설정. 기본값과 같은 것도 버전업으로 바뀌지 않게 명시한다
 management:

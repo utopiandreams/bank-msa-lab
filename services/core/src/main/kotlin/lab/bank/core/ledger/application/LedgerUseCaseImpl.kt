@@ -5,15 +5,19 @@ import lab.bank.core.ledger.domain.LedgerAccount
 import lab.bank.core.ledger.domain.exception.IdempotencyConflictException
 import lab.bank.core.ledger.domain.exception.OriginalEntryNotFoundException
 import lab.bank.core.ledger.infrastructure.JournalEntryRepository
+import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import lab.bank.core.shared.Amount
 import lab.bank.core.shared.IdempotencyKey
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 
 @Service
 class LedgerUseCaseImpl(
     private val journalEntryRepository: JournalEntryRepository,
+    private val jdbcClient: JdbcClient,
 ) : LedgerUseCase {
 
     @Transactional
@@ -59,6 +63,46 @@ class LedgerUseCaseImpl(
     override fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary? =
         journalEntryRepository.findByIdempotencyKey(idempotencyKey.value)
             ?.let { EntrySummary(it.id, it.type.name, it.createdAt) }
+
+    // 보고용 쿼리라 SQL (엔티티를 하루치 다 올리면 줄까지 지연 로딩이 터진다). 금액 = 전표의 차변 합
+    override fun entriesCreatedBetween(from: Instant, to: Instant, types: Set<String>): List<EntryExtractRow> =
+        jdbcClient.sql(
+            """
+            SELECT e.id, e.idempotency_key, e.type, e.created_at, e.reverses_entry_id,
+                   (SELECT sum(l.amount) FROM ledger.journal_line l WHERE l.entry_id = e.id AND l.direction = 'DEBIT') AS amount
+            FROM ledger.journal_entry e
+            WHERE e.created_at >= :from AND e.created_at < :to AND e.type IN (:types)
+            ORDER BY e.created_at, e.id
+            """,
+        )
+            .param("from", Timestamp.from(from))
+            .param("to", Timestamp.from(to))
+            .param("types", types)
+            .query { rs, _ ->
+                EntryExtractRow(
+                    entryId = rs.getObject("id", UUID::class.java),
+                    idempotencyKey = rs.getString("idempotency_key"),
+                    type = rs.getString("type"),
+                    amount = rs.getLong("amount"),
+                    createdAt = rs.getTimestamp("created_at").toInstant(),
+                    reversesEntryId = rs.getObject("reverses_entry_id", UUID::class.java),
+                )
+            }
+            .list()
+
+    override fun totalsBetween(from: Instant, to: Instant): DailyTotals =
+        jdbcClient.sql(
+            """
+            SELECT coalesce(sum(CASE WHEN l.direction = 'DEBIT' THEN l.amount END), 0) AS debit,
+                   coalesce(sum(CASE WHEN l.direction = 'CREDIT' THEN l.amount END), 0) AS credit
+            FROM ledger.journal_line l JOIN ledger.journal_entry e ON e.id = l.entry_id
+            WHERE e.created_at >= :from AND e.created_at < :to
+            """,
+        )
+            .param("from", Timestamp.from(from))
+            .param("to", Timestamp.from(to))
+            .query { rs, _ -> DailyTotals(rs.getLong("debit"), rs.getLong("credit")) }
+            .single()
 
     // 출금·송금도 같은 흐름이라 공통으로 둔다 (팩토리만 다르다)
     private fun record(candidate: JournalEntry): RecordedEntry {

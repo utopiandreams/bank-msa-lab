@@ -13,6 +13,8 @@ version = "0.0.1-SNAPSHOT"
 dependencies {
 	implementation(platform(libs.aws.sdk.bom))                                 // S3 클라이언트 (ADR-0006 대사 추출 파일, Garage). Garage는 경로 방식이라 forcePathStyle(true)
 	implementation(libs.aws.s3)
+	implementation(project(":libs:common"))                                  // 대사 추출 완료 이벤트 스키마 (ADR-0006)
+	implementation("org.springframework.boot:spring-boot-starter-kafka")    // 대사 추출 완료 알림 발행 (core의 첫 Kafka 발행)
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")              // /actuator/prometheus (버전은 Boot가 관리)
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")

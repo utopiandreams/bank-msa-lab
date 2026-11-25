@@ -2,6 +2,7 @@ package lab.bank.core.ledger.application
 
 import lab.bank.core.shared.Amount
 import lab.bank.core.shared.IdempotencyKey
+import java.time.Instant
 import java.util.UUID
 
 // ledger 모듈의 공개 인터페이스. posting은 리포지토리나 엔티티가 아니라 이것만 쓴다
@@ -32,4 +33,10 @@ interface LedgerUseCase {
 
     // 상태 조회: 그 키로 커밋된 거래가 있으면 요약, 없으면 null
     fun findEntry(idempotencyKey: IdempotencyKey): EntrySummary?
+
+    /** 대사 추출 (ADR-0006): [from, to)에 기록된 전표 중 types에 해당하는 것. 전표는 불변이라 만든 날 하나로 충분하다 */
+    fun entriesCreatedBetween(from: Instant, to: Instant, types: Set<String>): List<EntryExtractRow>
+
+    /** 시산표 (ADR-0006 결정 1): [from, to)에 기록된 모든 전표 줄의 차변 합·대변 합 */
+    fun totalsBetween(from: Instant, to: Instant): DailyTotals
 }
