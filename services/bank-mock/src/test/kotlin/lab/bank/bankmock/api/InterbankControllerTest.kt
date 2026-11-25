@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 
 // HTTP 계약: 거절도 200 (판정이 확실하므로), 4xx는 판정 못 한 요청에만
@@ -45,6 +46,20 @@ class InterbankControllerTest {
         send("c-3", """{"toBankCode":"088","toAccountNumber":"1234567890","amount":99999}""").andExpect {
             status { isConflict() }
             jsonPath("$.code") { value("IDEMPOTENCY_CONFLICT") }
+        }
+    }
+
+    @Test
+    fun `조회 - 보낸 것은 판정 그대로, 안 보낸 것은 200 NOT_FOUND`() {
+        send("c-5", """{"toBankCode":"088","toAccountNumber":"9990001","amount":10000}""")
+        mockMvc.get("/interbank/transfers/c-5").andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("REJECTED") }
+            jsonPath("$.rejectReason") { value("ACCOUNT_NOT_FOUND") }
+        }
+        mockMvc.get("/interbank/transfers/never-sent").andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("NOT_FOUND") }
         }
     }
 

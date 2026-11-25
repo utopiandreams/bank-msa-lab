@@ -22,4 +22,24 @@ data class InterbankTransferResponse(
     }
 }
 
+/** 조회 응답. status: ACCEPTED | REJECTED | NOT_FOUND */
+data class InterbankLookupResponse(
+    val idempotencyKey: String,
+    val status: InterbankLookupStatus,
+    val rejectReason: RejectReason?,
+) {
+    companion object {
+        fun found(t: InterbankTransfer) = InterbankLookupResponse(
+            t.idempotencyKey,
+            when (t.outcome) {
+                InterbankOutcome.ACCEPTED -> InterbankLookupStatus.ACCEPTED
+                InterbankOutcome.REJECTED -> InterbankLookupStatus.REJECTED
+            },
+            t.rejectReason,
+        )
+
+        fun notFound(idempotencyKey: String) = InterbankLookupResponse(idempotencyKey, InterbankLookupStatus.NOT_FOUND, null)
+    }
+}
+
 data class ErrorResponse(val code: String, val message: String)

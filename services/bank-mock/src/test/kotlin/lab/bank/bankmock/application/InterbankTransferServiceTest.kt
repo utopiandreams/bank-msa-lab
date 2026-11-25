@@ -4,6 +4,7 @@ import lab.bank.bankmock.domain.InterbankOutcome
 import lab.bank.bankmock.domain.RejectReason
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -14,7 +15,60 @@ import kotlin.test.assertNull
 class InterbankTransferServiceTest {
 
     private fun service(rejectRatePercent: Int = 0, random: Random = Random(42)) =
-        InterbankTransferService(BankMockProperties(rejectRatePercent = rejectRatePercent), random)
+        InterbankTransferService(BankMockProperties(rejectRatePercent = rejectRatePercent), random, sleeper = {})
+
+    // 실제로 기다리지 않고 "얼마나 기다렸나"만 기록
+    private val slept = mutableListOf<Duration>()
+
+    private fun delayed(processing: Duration = Duration.ZERO, response: Duration = Duration.ZERO, deadline: Duration = Duration.ofSeconds(10)) =
+        InterbankTransferService(
+            BankMockProperties(processingDelay = processing, responseDelay = response, processingDeadline = deadline),
+            Random(42),
+            sleeper = { slept += it },
+        )
+
+    @Test
+    fun `처리 지연이 상한 안이면 처리한다 - 조회하면 있음`() {
+        val svc = delayed(processing = Duration.ofSeconds(2))
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        assertEquals(listOf(Duration.ofSeconds(2)), slept)
+        assertEquals(InterbankOutcome.ACCEPTED, svc.find("t-1")?.outcome)
+    }
+
+    @Test
+    fun `처리 지연이 상한을 넘으면 상한까지만 기다리고 포기 - 기록 없음`() {
+        val svc = delayed(processing = Duration.ofSeconds(30), deadline = Duration.ofSeconds(10))
+        assertThrows<ProcessingDeadlineExceededException> { svc.transfer("t-1", "088", "1234567890", 10_000) }
+        assertEquals(listOf(Duration.ofSeconds(10)), slept)
+        assertNull(svc.find("t-1"), "포기했으면 조회해도 없어야 한다 (보내는 쪽이 이 '없음'을 믿고 출금을 취소한다)")
+    }
+
+    @Test
+    fun `응답 지연은 기록한 뒤 - 응답을 못 받아도 조회하면 있음`() {
+        // 보내는 쪽 read-timeout보다 긴 응답 지연 = "외부는 처리했는데 우리는 모름". 기다리는 순간 이미 기록돼 있어야 한다
+        lateinit var svc: InterbankTransferService
+        val recordedWhileWaiting = mutableListOf<Boolean>()
+        svc = InterbankTransferService(
+            BankMockProperties(responseDelay = Duration.ofSeconds(5)), Random(42),
+            sleeper = { recordedWhileWaiting += (svc.find("t-1") != null) },
+        )
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        assertEquals(listOf(true), recordedWhileWaiting)
+    }
+
+    @Test
+    fun `이미 판정한 키의 재요청은 지연 없이 - 처리 상한에 걸려 포기로 보이지 않는다`() {
+        val svc = delayed(processing = Duration.ofSeconds(2))
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        slept.clear()
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        assertEquals(emptyList(), slept)
+    }
+
+    @Test
+    fun `받은 적 없는 키는 조회하면 없음`() {
+        assertNull(service().find("never"))
+    }
 
     @Test
     fun `보통 계좌는 성공`() {

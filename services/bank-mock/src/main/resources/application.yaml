@@ -34,6 +34,9 @@ management:
 bank-mock:
   reject-account-prefix: "999"   # 받는 계좌가 이걸로 시작하면 "계좌 없음" 거절
   reject-rate-percent: 0         # 그 밖의 요청을 이 확률로 거절 (실험 스위치)
+  processing-delay: 0s           # 받은 뒤 판정까지 지연 (실험 스위치). 처리 상한을 넘으면 처리하지 않음 → 조회하면 "없음"
+  response-delay: 0s             # 판정·기록 뒤 응답 지연 (실험 스위치). transfer read-timeout(3s)보다 길면 "처리했는데 응답 못 받음"
+  processing-deadline: 10s       # 처리 상한 = 외부와의 계약. transfer.resolution.external-check-after는 이 값 + 여유
 
 server:
   shutdown: graceful
