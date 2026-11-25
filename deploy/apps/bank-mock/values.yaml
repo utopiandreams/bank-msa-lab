@@ -13,7 +13,12 @@ image:
 # DB 접속: CloudNativePG가 만든 Secret bank-mock-db-app (deploy/platform/bank-mock-db)
 env:
   SPRING_DATASOURCE_URL: jdbc:postgresql://bank-mock-db-rw:5432/bankmock
-  BANK_MOCK_REJECT_RATE_PERCENT: "0"
+  # "평소 외부 은행" (2026-11-26 운영 모드): 실제 외부 기관처럼 가끔 거절하고, 가끔 늦는다 → 평소에도 결과 불명이 조금씩 생기고 해소 일꾼이 푼다
+  BANK_MOCK_REJECT_RATE_PERCENT: "1"          # 받는 은행이 그냥 거절 1% → 보상(CANCELLED)
+  BANK_MOCK_RESPONSE_DELAY: "5s"              # 처리·기록은 했는데 응답이 transfer read-timeout(3s)보다 늦음
+  BANK_MOCK_RESPONSE_DELAY_PERCENT: "2"       #   → 2%가 결과 불명 → 조회하면 "있음" → COMPLETED (또는 거절이면 CANCELLED)
+  BANK_MOCK_PROCESSING_DELAY: "12s"           # 처리 상한(10s)을 넘김 → 처리 안 함(503)
+  BANK_MOCK_PROCESSING_DELAY_PERCENT: "1"     #   → 1%가 결과 불명 → 조회하면 "없음" → 출금 취소(CANCELLED, 사유 없음)
   # 실험 스위치 예 (2026-11-25 이중 지급 재현에 썼다, docs/experiments/week-08-reconciliation.md):
   # BANK_MOCK_RESPONSE_DELAY: "5s"            # transfer read-timeout(3s)보다 길게 → 결과 불명
   # BANK_MOCK_LOOKUP_LIES_NOT_FOUND: "true"   # 조회 계약 위반 → 해소 일꾼이 출금 취소 → 이중 지급
