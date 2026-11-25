@@ -14,7 +14,7 @@ import lab.bank.transfer.domain.BankCode
 import lab.bank.transfer.domain.IdempotencyConflictException
 import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.InterbankTransfer
-import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REJECTED
+import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAWN
 import lab.bank.transfer.domain.InvalidBankCodeException
 import lab.bank.transfer.domain.UserId
@@ -27,8 +27,8 @@ import java.util.UUID
  *
  * 단계마다 같은 모양: **의도 상태 커밋 → 트랜잭션 밖에서 원격 호출 → 결과 커밋** (pitfalls 8, 27)
  *   1. 출금       WITHDRAW_REQUESTED      → core 타행 출금  → WITHDRAWN / FAILED / (모름: 그대로)
- *   2. 외부 송금  EXTERNAL_BANK_REQUESTED → bank-mock 송금  → COMPLETED / EXTERNAL_BANK_REJECTED / (모름: 그대로, 보상 금지)
- *   3. 보상       EXTERNAL_BANK_REJECTED  → core 출금 취소  → CANCELLED / (모름: 그대로)
+ *   2. 외부 송금  EXTERNAL_BANK_REQUESTED → bank-mock 송금  → COMPLETED / WITHDRAW_CANCEL_REQUESTED / (모름: 그대로, 보상 금지)
+ *   3. 보상       WITHDRAW_CANCEL_REQUESTED  → core 출금 취소  → CANCELLED / (모름: 그대로)
  * 다음 단계로 갈지는 직전 단계가 남긴 **상태**로 판단한다. 결과 불명으로 멈춘 송금은 8주 차 해소 스케줄러가 이어 간다.
  *
  * 저장 포트는 저장된 새 객체(올라간 version)를 돌려준다 → 저장할 때마다 반환값으로 갈아탄다 (낡은 객체로 다시 저장하면 낙관적 락 예외).
@@ -75,7 +75,7 @@ class InterbankTransferUseCaseImpl(
         if (afterWithdraw.status != WITHDRAWN) return afterWithdraw              // 거절(FAILED) 또는 결과 불명
 
         val afterSend = sendToExternalBank(afterWithdraw)
-        if (afterSend.status != EXTERNAL_BANK_REJECTED) return afterSend         // 성공(COMPLETED) 또는 결과 불명
+        if (afterSend.status != WITHDRAW_CANCEL_REQUESTED) return afterSend         // 성공(COMPLETED) 또는 결과 불명
 
         return compensate(afterSend)
     }
@@ -102,7 +102,7 @@ class InterbankTransferUseCaseImpl(
         return save(requested)
     }
 
-    // 보상의 의도 상태 = EXTERNAL_BANK_REJECTED (외부 거절 결과를 커밋한 상태). 취소 키가 결정적이라 몇 번을 다시 해도 한 번만 취소된다
+    // 보상의 의도 상태 = WITHDRAW_CANCEL_REQUESTED (외부 거절 결과를 커밋한 상태). 취소 키가 결정적이라 몇 번을 다시 해도 한 번만 취소된다
     private fun compensate(rejected: InterbankTransfer): InterbankTransfer =
         when (val result = coreInterbankPort.cancelWithdraw(rejected.id)) {
             is CoreTransferResult.Completed -> save(rejected.apply { cancelled(result.coreEntryId) })

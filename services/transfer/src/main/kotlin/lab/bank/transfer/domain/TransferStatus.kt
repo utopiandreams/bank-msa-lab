@@ -42,7 +42,9 @@ enum class InterbankTransferStatus {
     WITHDRAWN,
 
     EXTERNAL_BANK_REQUESTED,
-    EXTERNAL_BANK_REJECTED,
+    // 출금 취소(보상)를 요청 중. 의도 상태는 행위로 짓는다 (pitfalls 39, 설계 연습 08 2부 결정 3, Flyway V8: 구 WITHDRAW_CANCEL_REQUESTED).
+    // "왜" 취소하나(외부 거절 / 외부에 안 보냄 / 외부 기록 없음)는 상태가 아니라 사유 칸에
+    WITHDRAW_CANCEL_REQUESTED,
 
     FAILED,
     CANCELLED,
@@ -61,12 +63,12 @@ enum class InterbankTransferStatus {
 
             WITHDRAWN -> EXTERNAL_BANK_REQUESTED == to
             EXTERNAL_BANK_REQUESTED -> when (to) {
-                COMPLETED, EXTERNAL_BANK_REJECTED, EXTERNAL_BANK_REQUESTED -> true
+                COMPLETED, WITHDRAW_CANCEL_REQUESTED, EXTERNAL_BANK_REQUESTED -> true
                 else -> false
             }
 
-            EXTERNAL_BANK_REJECTED -> when (to) {
-                CANCELLED, EXTERNAL_BANK_REJECTED -> true
+            WITHDRAW_CANCEL_REQUESTED -> when (to) {
+                CANCELLED, WITHDRAW_CANCEL_REQUESTED -> true
                 else -> false
             }
 

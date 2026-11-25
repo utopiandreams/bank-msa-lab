@@ -15,7 +15,7 @@ import lab.bank.transfer.domain.IdempotencyKey
 import lab.bank.transfer.domain.InterbankTransferStatus
 import lab.bank.transfer.domain.InterbankTransferStatus.CANCELLED
 import lab.bank.transfer.domain.InterbankTransferStatus.COMPLETED
-import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REJECTED
+import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.FAILED
 import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAW_REQUESTED
@@ -141,13 +141,13 @@ class InterbankTransferUseCaseTest {
     }
 
     @Test
-    fun `보상 결과 불명 - EXTERNAL_BANK_REJECTED에 머문다 (보상은 실패로 끝나지 않고 재시도 대상), 이벤트 없음`() {
+    fun `보상 결과 불명 - WITHDRAW_CANCEL_REQUESTED에 머문다 (보상은 실패로 끝나지 않고 재시도 대상), 이벤트 없음`() {
         externalBank.respond = { ExternalTransferResult.Rejected("ACCOUNT_NOT_FOUND") }
         core.cancelRespond = { CoreTransferResult.Unknown("503") }
 
         val result = request()
 
-        assertEquals(EXTERNAL_BANK_REJECTED, reload(result.transfer.id).status)
+        assertEquals(WITHDRAW_CANCEL_REQUESTED, reload(result.transfer.id).status)
         assertTrue(publishedStatuses(result.transfer.id).isEmpty())
     }
 

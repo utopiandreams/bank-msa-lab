@@ -2,7 +2,7 @@ package lab.bank.transfer.domain
 
 import lab.bank.transfer.domain.InterbankTransferStatus.CANCELLED
 import lab.bank.transfer.domain.InterbankTransferStatus.COMPLETED
-import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REJECTED
+import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.FAILED
 import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAWN
@@ -45,7 +45,7 @@ class InterbankTransfer (
         private set
 
     // 외부 은행이 거절한 사유 그대로 (ACCOUNT_NOT_FOUND, RECEIVING_BANK_REJECTED). 출금 실패 사유(failureCode)와 출처가 달라 따로 둔다
-    // EXTERNAL_BANK_REJECTED 이후 계속 있다 (보상이 끝나 CANCELLED가 돼도 "왜 돌려줬나"가 남아야 한다)
+    // WITHDRAW_CANCEL_REQUESTED 이후 계속 있다 (보상이 끝나 CANCELLED가 돼도 "왜 돌려줬나"가 남아야 한다)
     var externalRejectReason: String? = externalRejectReason
         private set
 
@@ -84,7 +84,7 @@ class InterbankTransfer (
     fun completed() = transitTo(COMPLETED)
 
     fun externalBankRejected(reason: String) {
-        transitTo(EXTERNAL_BANK_REJECTED)
+        transitTo(WITHDRAW_CANCEL_REQUESTED)
         this.externalRejectReason = reason
     }
 

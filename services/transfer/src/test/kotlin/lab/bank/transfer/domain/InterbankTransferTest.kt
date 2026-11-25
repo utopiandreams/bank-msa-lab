@@ -2,7 +2,7 @@ package lab.bank.transfer.domain
 
 import lab.bank.transfer.domain.InterbankTransferStatus.CANCELLED
 import lab.bank.transfer.domain.InterbankTransferStatus.COMPLETED
-import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REJECTED
+import lab.bank.transfer.domain.InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.EXTERNAL_BANK_REQUESTED
 import lab.bank.transfer.domain.InterbankTransferStatus.FAILED
 import lab.bank.transfer.domain.InterbankTransferStatus.REQUESTED
@@ -64,7 +64,7 @@ class InterbankTransferTest {
         t.withdrawn(withdrawEntry)
         t.externalBankRequested()
         t.externalBankRejected("ACCOUNT_NOT_FOUND")
-        assertEquals(EXTERNAL_BANK_REJECTED, t.status)
+        assertEquals(WITHDRAW_CANCEL_REQUESTED, t.status)
         assertFalse(t.status.isFinal())   // 보상이 끝나기 전엔 끝이 아니다 (이벤트 발행 안 함)
 
         t.cancelled(cancelEntry)

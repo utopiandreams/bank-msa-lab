@@ -30,7 +30,6 @@ import kotlin.test.assertNotEquals
  * 해소 일꾼 한 회차(resolveStuck)가 타행도 풀어야 한다.
  *
  * 해결할 때 보강할 것:
- *   - EXTERNAL_BANK_REJECTED는 WITHDRAW_CANCEL_REQUESTED로 이름이 바뀐다 (2부 결정 3) → 3번 테스트의 상태 이름
  *   - 외부 조회 포트가 생기면 2번 테스트에서 조회 결과(성공 / 거절 / 없음)를 지정하고 기대값을 나눈다
  *   - 출금 확인(core 조회)이 필요한 WITHDRAW_REQUESTED 테스트는 core 타행 조회 포트가 생긴 뒤
  */
@@ -68,7 +67,7 @@ class InterbankUnknownResolutionReproTest {
                 failureCode = null,
                 coreEntryId = if (withdrawn) UUID.randomUUID() else null,
                 cancelEntryId = null,
-                externalRejectReason = if (status == InterbankTransferStatus.EXTERNAL_BANK_REJECTED) "RECEIVING_BANK_REJECTED" else null,
+                externalRejectReason = if (status == InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED) "RECEIVING_BANK_REJECTED" else null,
                 createdAt = longAgo,
                 updatedAt = longAgo,
                 version = null,
@@ -104,7 +103,7 @@ class InterbankUnknownResolutionReproTest {
     /** 보상 의도에 멈춤 → 보상은 확인이 아니라 성공할 때까지 재시도 */
     @Test
     fun `재현 - 출금 취소 요청 중에 멈춘 타행 송금은 취소를 재시도해 CANCELLED가 돼야 하는데 그대로 남는다`() {
-        val t = stuck(InterbankTransferStatus.EXTERNAL_BANK_REJECTED)
+        val t = stuck(InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED)
 
         resolutionUseCase.resolveStuck()
 
