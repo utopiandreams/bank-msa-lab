@@ -11,6 +11,7 @@ group = "lab.bank"
 version = "0.0.1-SNAPSHOT"
 
 dependencies {
+	implementation(project(":libs:common"))                                  // 추출 완료 이벤트 스키마 (ADR-0006)
 	implementation("org.springframework.boot:spring-boot-starter-kafka")    // 추출 완료 이벤트 구독 (인박스, ADR-0006)
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")              // /actuator/prometheus (버전은 Boot가 관리)
