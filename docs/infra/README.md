@@ -329,6 +329,8 @@ GitOps 함정 메모:
   - ⚠️ **덮어쓰기를 막을 수단이 저장소에 없다.** `put-object --if-none-match '*'`(있으면 쓰지 마라)를 **무시하고 덮어썼다** (응답 200, 내용이 바뀜). 버킷 버전 관리도 없음(`get-bucket-versioning` 빈 응답, 공식 호환표 "Missing"). → ADR-0006의 "파일은 증거라 덮어쓰지 않는다"는 **앱이 지킨다**: 객체 키를 매번 새로 만들고(예: `<출처>/<날짜>/<추출 ID>.jsonl`) 완료 이벤트가 그 키와 체크섬을 가리키게 하면, 다시 추출해도 이전 파일이 남는다
   - local-path는 PVC 크기(5Gi)를 강제하지 않는다: Garage가 노드 디스크 전체(76.4GiB)를 용량으로 본다
 - **한계:** `replication_factor = 1`(복제 없음) + local-path(노드에 묶임) → garage-0이 올라간 노드(지금 bank-w4)의 디스크를 잃으면 파일도 잃는다. 실무라면 3복제 + 다른 장애 영역. Argo `prune: false` (Git에서 실수로 지워도 저장소가 안 사라지게)
+- 쓰는 곳 (2026-11-25): core·transfer 대사 추출 `<출처>/<날짜>/<추출 ID>.csv`, 대사 서비스가 받은 외부 원본 `external/<날짜>/<ID>.txt`. 대사 경보 규칙은 `deploy/platform/monitoring/reconciliation-rules.yaml` (Alertmanager 전이라 Prometheus Alerts 탭에서 보임)
+- **AWS SDK 함정 (pitfalls 42):** SDK v2 기본값(청크 서명 + 체크섬 트레일러)을 Garage가 `Invalid payload signature`로 거절 → 세 서비스 `StorageConfig`에서 `chunkedEncodingEnabled(false)`, 체크섬 `WHEN_REQUIRED`. 진짜 Garage 컨테이너 테스트: `GarageS3CompatibilityTest`
 - 확인 명령: `kubectl -n bank exec garage-0 -- /garage status`, `kubectl -n bank exec garage-0 -- /garage bucket info daily-extracts`, 헬스 `kubectl -n bank port-forward svc/garage 3903 & curl localhost:3903/health`
 
 ### 관측성 기본 스택 (2026-11-18, 아직 미적용)
