@@ -61,7 +61,7 @@ enum class InterbankTransferStatus {
                 else -> false
             }
 
-            WITHDRAWN -> EXTERNAL_BANK_REQUESTED == to
+            WITHDRAWN -> EXTERNAL_BANK_REQUESTED == to || WITHDRAW_CANCEL_REQUESTED == to
             EXTERNAL_BANK_REQUESTED -> when (to) {
                 COMPLETED, WITHDRAW_CANCEL_REQUESTED, EXTERNAL_BANK_REQUESTED -> true
                 else -> false

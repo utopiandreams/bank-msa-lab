@@ -36,5 +36,6 @@ class TransferResolutionUseCaseImpl(
                 resolved++
             }
             resolved
-        } ?: 0
+        }
+
 }

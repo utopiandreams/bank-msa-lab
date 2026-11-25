@@ -1,6 +1,5 @@
 package lab.bank.transfer.application.port.out
 
-import lab.bank.transfer.domain.InterbankTransfer
 import lab.bank.transfer.domain.Transfer
 
 /**

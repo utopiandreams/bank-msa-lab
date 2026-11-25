@@ -27,7 +27,8 @@ import kotlin.test.assertNotEquals
  * 8주 차 2부 재현: **타행 송금이 사가 중간 상태에 멈추면 아무도 풀지 않는다.** (`docs/design-drills/08-unknown-resolution.md` 2부)
  *
  * 1부(TransferUnknownResolutionReproTest)와 같은 방식: 해결 뒤의 기대 동작을 적는다. 지금은 해소 일꾼이 당행만 보므로 실패 = 재현.
- * 해소 일꾼 한 회차(resolveStuck)가 타행도 풀어야 한다.
+ * 해소 일꾼(InterbankResolutionUseCase)이 타행을 풀어야 한다. DB를 테스트끼리 공유해 다른 테스트가 남긴 더 오래된 멈춘 행이
+ * 먼저 잡힐 수 있으므로, 회차를 할 일이 없을 때까지 돌린다 (drain)
  *
  * 해결할 때 보강할 것:
  *   - 외부 조회 포트가 생기면 2번 테스트에서 조회 결과(성공 / 거절 / 없음)를 지정하고 기대값을 나눈다
@@ -37,7 +38,7 @@ import kotlin.test.assertNotEquals
 @Import(TestcontainersConfiguration::class, FakeCoreConfiguration::class)
 class InterbankUnknownResolutionReproTest {
 
-    @Autowired lateinit var resolutionUseCase: TransferResolutionUseCase
+    @Autowired lateinit var resolutionUseCase: InterbankResolutionUseCase
     @Autowired lateinit var repository: InterbankTransferRepository
     @Autowired lateinit var fakeCore: FakeCoreInterbankPort
     @Autowired lateinit var fakeCorePosting: FakeCorePostingPort
@@ -48,6 +49,11 @@ class InterbankUnknownResolutionReproTest {
         fakeCore.reset()
         fakeCorePosting.reset()
         fakeExternal.reset()
+    }
+
+    // 회차를 할 일이 없을 때까지 (한 회차는 최대 batchSize건이고, 조회 실패 시 끊긴다)
+    private fun drain() {
+        repeat(20) { if (resolutionUseCase.resolveStuck() == 0) return }
     }
 
     /** 그 상태가 된 지 한참 지난(= 그 홉에 보낸 지 한참 지난) 타행 송금. 출금 뒤 상태는 출금 전표 ID가 있다 */
@@ -82,7 +88,7 @@ class InterbankUnknownResolutionReproTest {
     fun `재현 - WITHDRAWN에 멈춘 타행 송금은 출금 취소로 끝나야 하는데 그대로 남는다`() {
         val t = stuck(InterbankTransferStatus.WITHDRAWN)
 
-        resolutionUseCase.resolveStuck()
+        drain()
 
         assertEquals(listOf(t.id), fakeCore.cancelCalls.filter { it == t.id }, "출금 취소를 한 번 요청해야 한다")
         assertEquals(InterbankTransferStatus.CANCELLED, reload(t).status)
@@ -94,7 +100,7 @@ class InterbankUnknownResolutionReproTest {
     fun `재현 - EXTERNAL_BANK_REQUESTED에 멈춘 타행 송금은 외부 조회로 확정돼야 하는데 그대로 남는다`() {
         val t = stuck(InterbankTransferStatus.EXTERNAL_BANK_REQUESTED)
 
-        resolutionUseCase.resolveStuck()
+        drain()
 
         assertNotEquals(InterbankTransferStatus.EXTERNAL_BANK_REQUESTED, reload(t).status)
         assertEquals(0, fakeExternal.calls.count { it.transferId == t.id }, "외부 송금 재전송 금지 (확정은 조회로)")
@@ -105,7 +111,7 @@ class InterbankUnknownResolutionReproTest {
     fun `재현 - 출금 취소 요청 중에 멈춘 타행 송금은 취소를 재시도해 CANCELLED가 돼야 하는데 그대로 남는다`() {
         val t = stuck(InterbankTransferStatus.WITHDRAW_CANCEL_REQUESTED)
 
-        resolutionUseCase.resolveStuck()
+        drain()
 
         assertEquals(listOf(t.id), fakeCore.cancelCalls.filter { it == t.id })
         assertEquals(InterbankTransferStatus.CANCELLED, reload(t).status)

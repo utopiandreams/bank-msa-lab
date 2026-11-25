@@ -79,6 +79,10 @@ class InterbankTransfer (
         this.failureCode = failureCode
     }
 
+    fun withdrawCancelRequested() {
+        transitTo(WITHDRAW_CANCEL_REQUESTED)
+    }
+
     fun externalBankRequested() = transitTo(EXTERNAL_BANK_REQUESTED)
 
     fun completed() = transitTo(COMPLETED)
