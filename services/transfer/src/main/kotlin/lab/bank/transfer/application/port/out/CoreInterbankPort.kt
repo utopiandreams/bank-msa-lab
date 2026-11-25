@@ -17,10 +17,15 @@ import java.util.UUID
  *   Unknown   - 그 밖 전부. **취소에는 Rejected가 없다**: 보상은 실패로 끝날 수 없다 (ADR-0004).
  *               404(원래 출금 없음)·422(타행 출금 아님)는 정상 흐름에선 나올 수 없는 우리 쪽 버그라, "끝났다"로 보면 안 되고
  *               COMPENSATING에 남겨 사람이 보게 한다 (에러 로그)
+ *
+ * lookupWithdraw (GET /postings/{송금ID}, 8주 차 2부) - 타행 출금이 됐는지 조회. 당행 조회(CorePostingPort.lookup)와 같은 API·같은 분류
+ *   (core는 거래 종류와 상관없이 멱등 키로 전표를 찾는다). NotProcessed는 core 트랜잭션 타임아웃이 지난 뒤에만 "출금 안 됨"으로 믿는다
  */
 interface CoreInterbankPort {
 
     fun withdraw(command: InterbankWithdrawCommand): CoreTransferResult
 
     fun cancelWithdraw(transferId: UUID): CoreTransferResult
+
+    fun lookupWithdraw(transferId: UUID): CoreTransferLookupResult
 }

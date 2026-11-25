@@ -32,13 +32,3 @@ interface TransferRepository {
      */
     fun findUnresolvedForUpdate(sentBefore: Instant, limit: Int): List<Transfer>
 }
-
-interface InterbankTransferRepository {
-
-    fun save(transfer: InterbankTransfer): InterbankTransfer
-
-    fun findById(id: UUID): InterbankTransfer?
-
-    fun findByIdempotencyKey(requesterId: UserId, idempotencyKey: IdempotencyKey): InterbankTransfer?
-
-}

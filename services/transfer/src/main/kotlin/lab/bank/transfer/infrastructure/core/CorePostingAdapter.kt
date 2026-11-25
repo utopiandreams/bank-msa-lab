@@ -88,33 +88,9 @@ class CorePostingAdapter(
      *   그 밖 (4xx·5xx), 응답 없음 (타임아웃·연결 실패) → Unknown
      * 조회는 GET이고 돈을 움직이지 않아서, Unknown이면 그냥 다음 회차에 다시 물으면 된다.
      */
+    // 조회 계약·분류는 타행 출금 조회와 같다 → CorePostingLookup
     override fun lookup(transfer: Transfer): CoreTransferLookupResult =
-        try {
-            coreRestClient.get()
-                .uri("/postings/{key}", transfer.id.toString())
-                .accept(MediaType.APPLICATION_JSON)
-                .exchange { _, response -> classifyLookup(transfer, response) }
-        } catch (e: ResourceAccessException) {
-            log.warn("core 송금 조회 응답 없음 transferId={} cause={}", transfer.id, e.message)
-            CoreTransferLookupResult.Unknown(e.message ?: e.javaClass.simpleName)
-        }
-
-    private fun classifyLookup(transfer: Transfer, response: ConvertibleClientHttpResponse): CoreTransferLookupResult {
-        val status = response.statusCode.value()
-        if (status != 200) {
-            log.warn("core 송금 조회 실패 transferId={} status={}", transfer.id, status)
-            return CoreTransferLookupResult.Unknown("core 조회 응답 $status")
-        }
-        val body = runCatching { response.bodyTo(CorePostingStatusResponse::class.java) }.getOrNull()
-        return when {
-            body?.status == "COMPLETED" && body.entryId != null -> CoreTransferLookupResult.Completed(body.entryId)
-            body?.status == "NOT_PROCESSED" -> CoreTransferLookupResult.NotProcessed
-            else -> {
-                log.warn("core 송금 조회 응답을 해석할 수 없음 transferId={} body={}", transfer.id, body)
-                CoreTransferLookupResult.Unknown("core 조회 응답 해석 불가: $body")
-            }
-        }
-    }
+        CorePostingLookup.lookup(coreRestClient, transfer.id, "송금")
 
     // 에러 body(ProblemDetail)를 읽는다. 비었거나 형식이 다르면 null (분류는 상태 코드로 이미 정해졌으므로 body는 부가 정보)
     private fun ConvertibleClientHttpResponse.problemOrNull(): CoreProblem? =

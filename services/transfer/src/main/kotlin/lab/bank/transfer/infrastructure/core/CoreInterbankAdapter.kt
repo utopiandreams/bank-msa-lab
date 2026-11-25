@@ -1,6 +1,7 @@
 package lab.bank.transfer.infrastructure.core
 
 import lab.bank.transfer.application.port.out.CoreInterbankPort
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.InterbankWithdrawCommand
 import org.slf4j.LoggerFactory
@@ -39,6 +40,10 @@ class CoreInterbankAdapter(
                 .uri("/postings/interbank-withdrawals/{key}/cancel", transferId.toString())
                 .exchange { _, response -> classifyCancel(transferId, response) }
         }
+
+    // 출금 조회: 당행 송금 조회와 같은 API·분류 (core는 멱등 키 = 송금 ID로 찾는다)
+    override fun lookupWithdraw(transferId: UUID): CoreTransferLookupResult =
+        CorePostingLookup.lookup(coreRestClient, transferId, "타행 출금")
 
     // 응답을 못 받음(연결 실패·타임아웃) → 처리됐는지 모름
     private fun call(op: String, transferId: UUID, block: () -> CoreTransferResult): CoreTransferResult =

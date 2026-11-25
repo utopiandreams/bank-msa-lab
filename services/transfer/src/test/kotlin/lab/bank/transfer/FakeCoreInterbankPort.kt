@@ -1,13 +1,14 @@
 package lab.bank.transfer
 
 import lab.bank.transfer.application.port.out.CoreInterbankPort
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.InterbankWithdrawCommand
 import java.util.UUID
 
 /**
  * 가짜 core (타행 출금·출금 취소). 결과를 마음대로 정해 사가의 분기(완료·거절·결과 불명)를 만든다.
- * 기본: 둘 다 완료
+ * 기본: 출금·취소 완료, 출금 조회는 "전표 없음"
  */
 class FakeCoreInterbankPort : CoreInterbankPort {
 
@@ -15,6 +16,8 @@ class FakeCoreInterbankPort : CoreInterbankPort {
     var cancelRespond: (UUID) -> CoreTransferResult = { CoreTransferResult.Completed(UUID.randomUUID()) }
     val withdrawCalls = mutableListOf<InterbankWithdrawCommand>()
     val cancelCalls = mutableListOf<UUID>()
+    var lookupRespond: (UUID) -> CoreTransferLookupResult = { CoreTransferLookupResult.NotProcessed }
+    val lookupCalls = mutableListOf<UUID>()
 
     override fun withdraw(command: InterbankWithdrawCommand): CoreTransferResult {
         withdrawCalls += command
@@ -26,10 +29,17 @@ class FakeCoreInterbankPort : CoreInterbankPort {
         return cancelRespond(transferId)
     }
 
+    override fun lookupWithdraw(transferId: UUID): CoreTransferLookupResult {
+        lookupCalls += transferId
+        return lookupRespond(transferId)
+    }
+
     fun reset() {
         withdrawRespond = { CoreTransferResult.Completed(UUID.randomUUID()) }
         cancelRespond = { CoreTransferResult.Completed(UUID.randomUUID()) }
         withdrawCalls.clear()
         cancelCalls.clear()
+        lookupRespond = { CoreTransferLookupResult.NotProcessed }
+        lookupCalls.clear()
     }
 }

@@ -45,6 +45,7 @@ transfer:
     enabled: true
     poll-interval: 5s      # 회차 사이 쉬는 시간
     check-after: 5s        # 보낸 시각(createdAt) + 이만큼 지나야 조회. 정합성 장치: core 트랜잭션 타임아웃 3s·transfer→core 최악 4s보다 길게
+    external-check-after: 15s  # 타행 외부 홉: 외부 처리 상한(bank-mock processing-deadline 10s) + 여유. 우리 read-timeout(3s)이 아님
     batch-size: 10         # 조회하는 동안 행 잠금·커넥션을 쥐므로 작게
 
 # Transactional Outbox (6주 차, infrastructure/outbox/OutboxProperties)

@@ -2,6 +2,7 @@ package lab.bank.transfer.infrastructure.bankmock
 
 import lab.bank.transfer.application.port.out.ExternalBankPort
 import lab.bank.transfer.application.port.out.ExternalTransferCommand
+import lab.bank.transfer.application.port.out.ExternalTransferLookupResult
 import lab.bank.transfer.application.port.out.ExternalTransferResult
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse
+import java.util.UUID
 
 /**
  * ExternalBankPort 구현: bank-mock에 이체를 보내고 응답을 셋으로 분류한다.
@@ -38,6 +40,39 @@ class BankMockAdapter(
         } catch (e: ResourceAccessException) {
             unknown(command, "응답 없음: ${e.message ?: e.javaClass.simpleName}")
         }
+
+    /**
+     * 조회 분류 (8주 차 2부). 확실한 답(200 + 아는 status)만 Accepted·Rejected·NotFound, 나머지는 전부 Unknown.
+     * 특히 404는 NotFound가 **아니다**: bank-mock은 "없음"을 200 + NOT_FOUND로 준다. 404는 URL·라우팅 문제일 수 있고,
+     * 그걸 "없음"으로 읽으면 성공한 이체를 취소한다 (이중 지급)
+     */
+    override fun lookup(transferId: UUID): ExternalTransferLookupResult =
+        try {
+            bankMockRestClient.get()
+                .uri("/interbank/transfers/{key}", transferId.toString())
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange { _, response -> classifyLookup(transferId, response) }
+        } catch (e: ResourceAccessException) {
+            lookupUnknown(transferId, "응답 없음: ${e.message ?: e.javaClass.simpleName}")
+        }
+
+    private fun classifyLookup(transferId: UUID, response: ConvertibleClientHttpResponse): ExternalTransferLookupResult {
+        val status = response.statusCode.value()
+        if (status != 200) return lookupUnknown(transferId, "외부 조회 응답 $status")
+        val body = runCatching { response.bodyTo(BankMockLookupResponse::class.java) }.getOrNull()
+        return when (body?.status) {
+            "ACCEPTED" -> ExternalTransferLookupResult.Accepted
+            "REJECTED" -> ExternalTransferLookupResult.Rejected(body.rejectReason ?: "EXTERNAL_REJECTED")
+            "NOT_FOUND" -> ExternalTransferLookupResult.NotFound
+            else -> lookupUnknown(transferId, "200 응답인데 조회 결과를 읽을 수 없음: ${body?.status}")
+        }
+    }
+
+    // 조회 실패는 아무것도 바꾸지 않고 다음 회차에 다시 묻는다 → warn (송금 결과 불명처럼 사람이 볼 일은 아님)
+    private fun lookupUnknown(transferId: UUID, reason: String): ExternalTransferLookupResult.Unknown {
+        log.warn("외부 이체 조회 실패 transferId={} reason={}", transferId, reason)
+        return ExternalTransferLookupResult.Unknown(reason)
+    }
 
     private fun classify(command: ExternalTransferCommand, response: ConvertibleClientHttpResponse): ExternalTransferResult {
         val status = response.statusCode.value()

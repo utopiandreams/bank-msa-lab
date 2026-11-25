@@ -1,6 +1,7 @@
 package lab.bank.transfer.infrastructure.bankmock
 
 import lab.bank.transfer.application.port.out.ExternalTransferCommand
+import lab.bank.transfer.application.port.out.ExternalTransferLookupResult
 import lab.bank.transfer.application.port.out.ExternalTransferResult
 import lab.bank.transfer.domain.Amount
 import org.junit.jupiter.api.Test
@@ -69,5 +70,46 @@ class BankMockAdapterTest {
     fun `5xx는 Unknown - 보상하면 안 된다`() {
         respond(HttpStatus.SERVICE_UNAVAILABLE)
         assertIs<ExternalTransferResult.Unknown>(adapter.send(command))
+    }
+
+    // ---- 조회 (8주 차 2부): 확실한 답만 Accepted·Rejected·NotFound, 나머지는 Unknown ----
+
+    private fun respondLookup(status: HttpStatus, body: String = "") {
+        server.expect(requestTo("http://bank-mock/interbank/transfers/${command.transferId}"))
+            .andExpect(method(HttpMethod.GET))
+            .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
+    }
+
+    @Test
+    fun `조회 200 ACCEPTED는 Accepted`() {
+        respondLookup(HttpStatus.OK, """{"idempotencyKey":"x","status":"ACCEPTED","rejectReason":null}""")
+        assertEquals(ExternalTransferLookupResult.Accepted, adapter.lookup(command.transferId))
+    }
+
+    @Test
+    fun `조회 200 REJECTED는 Rejected와 사유`() {
+        respondLookup(HttpStatus.OK, """{"idempotencyKey":"x","status":"REJECTED","rejectReason":"RECEIVING_BANK_REJECTED"}""")
+        assertEquals(ExternalTransferLookupResult.Rejected("RECEIVING_BANK_REJECTED"), adapter.lookup(command.transferId))
+    }
+
+    @Test
+    fun `조회 200 NOT_FOUND는 NotFound`() {
+        respondLookup(HttpStatus.OK, """{"idempotencyKey":"x","status":"NOT_FOUND","rejectReason":null}""")
+        assertEquals(ExternalTransferLookupResult.NotFound, adapter.lookup(command.transferId))
+    }
+
+    @Test
+    fun `조회 404는 NotFound가 아니라 Unknown - 라우팅 문제를 '없음'으로 읽으면 성공한 이체를 취소한다`() {
+        respondLookup(HttpStatus.NOT_FOUND)
+        assertIs<ExternalTransferLookupResult.Unknown>(adapter.lookup(command.transferId))
+    }
+
+    @Test
+    fun `조회 5xx·모르는 status는 Unknown`() {
+        respondLookup(HttpStatus.SERVICE_UNAVAILABLE)
+        assertIs<ExternalTransferLookupResult.Unknown>(adapter.lookup(command.transferId))
+        server.reset()
+        respondLookup(HttpStatus.OK, """{"idempotencyKey":"x","status":"PENDING","rejectReason":null}""")
+        assertIs<ExternalTransferLookupResult.Unknown>(adapter.lookup(command.transferId))
     }
 }

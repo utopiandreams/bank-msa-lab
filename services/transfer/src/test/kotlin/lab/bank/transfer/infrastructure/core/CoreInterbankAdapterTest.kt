@@ -1,5 +1,6 @@
 package lab.bank.transfer.infrastructure.core
 
+import lab.bank.transfer.application.port.out.CoreTransferLookupResult
 import lab.bank.transfer.application.port.out.CoreTransferResult
 import lab.bank.transfer.application.port.out.InterbankWithdrawCommand
 import lab.bank.transfer.domain.Amount
@@ -81,5 +82,27 @@ class CoreInterbankAdapterTest {
     fun `취소 5xx는 Unknown - COMPENSATING에 남아 재시도`() {
         expectCancel().andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR))
         assertIs<CoreTransferResult.Unknown>(adapter.cancelWithdraw(transferId))
+    }
+
+    // ---- 출금 조회 (8주 차 2부): 당행 송금 조회와 같은 API GET /postings/{송금 ID} ----
+
+    private fun expectLookup() = server.expect(requestTo("http://core/postings/$transferId")).andExpect(method(HttpMethod.GET))
+
+    @Test
+    fun `출금 조회 COMPLETED는 Completed와 출금 전표`() {
+        expectLookup().andRespond(json(HttpStatus.OK, """{"idempotencyKey":"$transferId","status":"COMPLETED","entryId":"$entryId"}"""))
+        assertEquals(CoreTransferLookupResult.Completed(entryId), adapter.lookupWithdraw(transferId))
+    }
+
+    @Test
+    fun `출금 조회 NOT_PROCESSED는 NotProcessed`() {
+        expectLookup().andRespond(json(HttpStatus.OK, """{"idempotencyKey":"$transferId","status":"NOT_PROCESSED"}"""))
+        assertEquals(CoreTransferLookupResult.NotProcessed, adapter.lookupWithdraw(transferId))
+    }
+
+    @Test
+    fun `출금 조회 5xx는 Unknown`() {
+        expectLookup().andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR))
+        assertIs<CoreTransferLookupResult.Unknown>(adapter.lookupWithdraw(transferId))
     }
 }
