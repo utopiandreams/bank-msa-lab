@@ -85,6 +85,12 @@ management:
       # 앱 안에서 백분위를 미리 계산하는 방식(percentiles)은 파드 여러 개를 합칠 수 없어서 쓰지 않는다
       percentiles-histogram:
         http.server.requests: true
+        # 아래는 서비스 RED 대시보드(deploy/grafana/dashboards/bank-red.json)의 p99용. 이 서비스에 없는 지표는 그냥 무시된다
+        http.client.requests: true           # 다른 서비스 호출 (transfer → core · bank-mock)
+        spring.cloud.gateway.requests: true  # gateway 라우트별 (gateway의 서버 지표는 라우팅된 요청을 uri=UNKNOWN으로 뭉친다)
+        spring.kafka.listener: true          # Kafka 소비 (메시지 하나 처리 시간)
+        spring.kafka.template: true          # Kafka 발행 (Outbox 릴레이)
+        tasks.scheduled.execution: true      # @Scheduled (릴레이 · 결과 불명 해소)
 
 server:
   shutdown: graceful

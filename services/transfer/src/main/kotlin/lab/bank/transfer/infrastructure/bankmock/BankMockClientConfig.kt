@@ -1,5 +1,6 @@
 package lab.bank.transfer.infrastructure.bankmock
 
+import io.micrometer.observation.ObservationRegistry
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -13,9 +14,17 @@ import java.net.http.HttpClient
 class BankMockClientConfig {
 
     @Bean
-    fun bankMockRestClient(properties: BankMockClientProperties): RestClient {
+    // observationRegistry: 호출 지표(http.client.requests)용. 이유는 CoreClientConfig 주석
+    fun bankMockRestClient(
+        properties: BankMockClientProperties,
+        observationRegistry: ObservationRegistry = ObservationRegistry.NOOP,
+    ): RestClient {
         val httpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout).build()
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply { setReadTimeout(properties.readTimeout) }
-        return RestClient.builder().baseUrl(properties.baseUrl).requestFactory(requestFactory).build()
+        return RestClient.builder()
+            .baseUrl(properties.baseUrl)
+            .requestFactory(requestFactory)
+            .observationRegistry(observationRegistry)
+            .build()
     }
 }
