@@ -186,6 +186,9 @@
   - [ ] 남음: 판독 연습 1회 (bank-mock 지연 → 느린 송금 트레이스 읽기, 플레이북 1-1). 로그에 traceId는 10주 차 Loki와 함께로 이동
 - [ ] 10주: Prometheus·Loki·Grafana로 RED 지표, 컨슈머 랙, JVM 대시보드, 로그 ↔ 트레이스 연결
   - 2026-11-18 결정: **기본 스택만 앞당긴다** (노드 확장 전에). `kube-prometheus-stack`(Prometheus·Grafana, 노드·쿠버네티스 기본 대시보드) + Strimzi·CloudNativePG 대시보드 + etcd 지표 + 앱 지표(`micrometer-registry-prometheus`, 2026-11-18 승인: JVM·API별 지연·커넥션 풀). 이유: 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고, 같은 대시보드를 일찍부터 반복해 봐야 평소 모양이 눈에 익는다. 서비스별 RED 대시보드 설계, Loki·Tempo, SLO·알림은 10~11주 차 그대로
+  - 2026-11-25 결정: **RED 대시보드는 8주 차와 병렬**로 지금, **Loki·로그 traceId는 8주 차 뒤 트레이싱 판독 연습 직전**에
+  - [x] 서비스 RED 대시보드 `deploy/grafana/dashboards/bank-red.json` (2026-11-25, Claude가 만들고 개발자와 같이 읽는 연습): 입구 숫자 → 서비스 비교 → 서비스 상세 → 의존성(부르는 쪽 vs 받는 쪽) → 비동기(발행·소비·스케줄러) → 자원 링크. 에러율은 5xx만, 4xx는 따로. 함께 고친 것: transfer RestClient에 지표가 없던 것(`observationRegistry`), 발행·소비·스케줄러·라우트 히스토그램
+  - [ ] 대시보드 같이 읽기 연습 (다음 세션)
 - [ ] 11주: 송금 성공률·p99 SLO 정의, Alertmanager 알림
 
 ### Phase 4. 장애 실험 컨트롤 패널 (12~13주) — 끝나면 시연 가능

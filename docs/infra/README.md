@@ -362,6 +362,13 @@ GitOps 함정 메모:
 - 모든 지표에 `application` 라벨 (`management.metrics.tags.application`). JVM 대시보드가 이 라벨로 고른다.
 - **첫 배포 때 주의:** 차트(프로브 경로 변경)가 먼저 반영되고 새 이미지 태그가 몇 분 뒤에 반영되는 사이, 옛 이미지 + 새 프로브(`/livez` 404) 조합의 새 파드가 Ready가 안 된다. `maxUnavailable: 0`이라 기존 파드가 계속 서비스하므로 장애는 아니고, CI가 태그를 커밋하면 풀린다 (pitfalls 18 expand → contract의 작은 사례).
 
+**서비스 RED 대시보드** (2026-11-25, `deploy/grafana/dashboards/bank-red.json`, uid `bank-red`):
+- 직접 작성한 유일한 대시보드. 읽는 법은 패널마다 설명(ⓘ)에, 배치 원칙은 `docs/learning/observability.md` 1-4
+- 모든 HTTP 쿼리에서 `uri!~"/livez|/readyz|/actuator.*"`를 뺀다: 안 빼면 트래픽이 없어도 서비스마다 초당 0.3건, p50 1ms로 보인다
+- gateway의 서버 지표는 라우팅된 요청을 `uri="UNKNOWN"`으로 뭉친다 → 라우트별은 `spring_cloud_gateway_requests`(`routeId`)
+- 히스토그램(p99용)을 `http.client.requests`·`spring.cloud.gateway.requests`·`spring.kafka.listener`·`spring.kafka.template`·`tasks.scheduled.execution`에도 켰다 (서비스 공통 블록)
+- **함정:** `RestClient.builder()`로 직접 만든 클라이언트는 `observationRegistry`를 넘기지 않으면 지표가 없다. 트레이스는 OTel 에이전트가 따로 잡아서 보이니 "계측되고 있다"고 착각하기 쉽다
+
 Grafana 관리자 계정 (Git 밖, 클러스터에서 한 번):
 ```bash
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
