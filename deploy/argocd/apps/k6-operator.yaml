@@ -1,0 +1,36 @@
+# k6-operator (2026-11-25, 12주 차 설치를 미리). TestRun 리소스 하나를 만들면 클러스터 안에서 k6 파드를 띄워 부하를 건다.
+# 지금 쓰는 load-test/lock-compare.sh(k6 Job 실행기)를 대신하고, 12주 차 chaos-control이 버튼으로 TestRun을 만든다.
+# 왜 클러스터 안: 맥북에서 걸면 Wi-Fi·Traefik이 병목이 되어 서버 한계가 아니라 내 노트북 한계를 잰다 (pitfalls 36 근처)
+# 구성·사용법: docs/infra/README.md "부하·장애 주입"
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k6-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"   # CRD(TestRun)를 만드는 쪽
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: k6-operator
+    targetRevision: 4.7.0   # k6-operator 1.7.0
+    helm:
+      releaseName: k6-operator
+      valuesObject:
+        namespace:
+          create: false   # Argo CD가 만든다 (CreateNamespace). 차트가 만들면 둘이 같은 Namespace를 소유하려 다툰다
+        manager:
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k6-operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # CRD가 커서 annotation 크기 제한(256KB)에 걸린다 (CNPG·Strimzi와 같은 이유)

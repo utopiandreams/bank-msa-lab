@@ -29,9 +29,18 @@ spec:
         kubeProxy: { enabled: false }
         kubeEtcd: { enabled: false }
 
-        # ── 알림은 11주 차 ───────────────────────────────────────────
-        # 규칙(defaultRules)은 그대로 평가된다 → Prometheus UI의 Alerts 탭에서 볼 수는 있다. 보낼 곳만 없다
-        alertmanager: { enabled: false }
+        # ── 알림 (2026-11-25, 11주 차 배관을 미리) ──────────────────────
+        # Prometheus는 규칙을 평가해 "울리는 중"인 경보를 Alertmanager로 보낸다. Alertmanager는 묶기(같은 원인 여러 개 → 한 통),
+        # 억제(상위 장애가 울리면 하위는 조용히), 침묵(점검 중 끄기), 보낼 곳(채널) 고르기를 한다.
+        # 지금 받는 곳은 차트 기본값 "null"(아무 데도 안 보냄) → Alertmanager UI에서 묶인 경보만 보인다. 채널은 개발자가 고르면 추가.
+        # UI는 인증이 없어서 Ingress 없이 port-forward로: kubectl -n monitoring port-forward svc/kps-alertmanager 9093
+        alertmanager:
+          enabled: true
+          alertmanagerSpec:
+            retention: 120h   # 경보 이력 (기본 120h)
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { memory: 128Mi }
 
         prometheusOperator:
           # 웹훅은 PrometheusRule 문법을 미리 검사해 주는 기능. Helm 훅 Job과 인증서 Secret이 따라오는데,

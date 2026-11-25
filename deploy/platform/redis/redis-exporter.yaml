@@ -1,0 +1,51 @@
+# Redis 지표 수집기 (2026-11-25, 10주 차 배관). Redis는 Prometheus 형식으로 지표를 내지 않아서 옆에서 INFO를 읽어 번역해 준다.
+# 7주 차 Redis 락 붕괴 때 Redis 쪽 그래프가 없었다 → 이제 명령 처리량·연결 수·메모리·지연(latency) 이벤트가 보인다.
+#
+# 사이드카(redis 파드 안)가 아니라 별도 Deployment인 이유: redis StatefulSet을 건드리면 재시작 = 락 장부가 비워진다.
+# 수집기는 Redis가 죽어도 살아 있어서 "redis_up 0"으로 죽었다는 사실 자체를 알려 준다 (사이드카는 같이 죽는다)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 59000
+      containers:
+        - name: exporter
+          image: oliver006/redis_exporter:v1.99.0
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis:6379
+          ports:
+            - { name: metrics, containerPort: 9121 }
+          readinessProbe:
+            httpGet: { path: /health, port: metrics }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: redis
+  labels:
+    app: redis-exporter
+spec:
+  selector:
+    matchLabels:
+      app: redis-exporter
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s

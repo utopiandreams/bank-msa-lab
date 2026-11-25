@@ -1,0 +1,17 @@
+# Garage 지표 (2026-11-25, 10주 차 배관). 관리 포트(3903)의 /metrics는 metrics_token을 안 둬서 토큰 없이 열려 있다
+# (deploy/platform/garage/garage.yaml). S3 요청 수·에러·지연(api_s3_*), 블록 읽기·쓰기, 디스크 여유가 나온다.
+# 대사 추출 파일이 못 올라가면 여기서 먼저 보인다
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: garage
+  labels:
+    app: garage
+spec:
+  selector:
+    matchLabels:
+      app: garage
+  podMetricsEndpoints:
+    - port: admin
+      path: /metrics
+      interval: 30s

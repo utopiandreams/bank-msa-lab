@@ -1,0 +1,93 @@
+# Chaos Mesh (2026-11-25, 12주 차 설치를 미리). PodChaos(파드 죽이기)·NetworkChaos(지연·손실·단절)·StressChaos 등을
+# 리소스 하나로 건다. 12주 차 chaos-control이 버튼으로 이 리소스를 만든다. AWS로 치면 Fault Injection Service.
+# 구성·사용법: docs/infra/README.md "부하·장애 주입"
+#
+# 안전장치: enableFilterNamespace → annotation chaos-mesh.org/inject=enabled가 붙은 네임스페이스(bank)에만 장애를 건다.
+# 실수로 selector를 비우거나 넓게 쓰면 kube-system·monitoring까지 죽일 수 있다 (실험 도구가 사고를 내는 가장 흔한 길)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chaos-mesh
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.chaos-mesh.org
+    chart: chaos-mesh
+    targetRevision: 2.8.8
+    helm:
+      releaseName: chaos-mesh
+      valuesObject:
+        timezone: Asia/Seoul   # 스케줄 실험(Schedule)의 cron 기준
+        controllerManager:
+          replicaCount: 1      # 기본 3 (리더 선출). 학습 클러스터는 메모리가 병목이라 1
+          enableFilterNamespace: true
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 256Mi }
+        chaosDaemon:
+          # 노드마다 하나 (privileged). 컨테이너의 네트워크 네임스페이스에 들어가 tc로 지연을 넣고, 프로세스를 죽인다.
+          # k3s는 containerd 소켓이 표준 경로(/run/containerd)가 아니라 k3s 아래에 있다 → 틀리면 실험이 "컨테이너를 못 찾음"으로 실패
+          runtime: containerd
+          socketPath: /run/k3s/containerd/containerd.sock
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+        dashboard:
+          # 웹 UI: 실험 만들기·기록 보기. 인증 끔(학습) → Ingress 없이 port-forward로만:
+          # kubectl -n chaos-mesh port-forward svc/chaos-dashboard 2333
+          securityMode: false
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 256Mi }
+        dnsServer:
+          create: false   # DNSChaos(DNS 응답 조작)는 안 쓴다 → CoreDNS 대체 서버 파드 하나 아낌
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chaos-mesh
+  # 차트가 웹훅 TLS 인증서를 helm 템플릿 단계에서 무작위로 만든다 → Argo CD는 동기화할 때마다 템플릿을 다시 그려서
+  # 인증서가 매번 달라 보인다 (영원히 OutOfSync, selfHeal이면 인증서를 계속 갈아 끼움). 처음 적용한 값을 그대로 두게 무시한다.
+  # Secret과 웹훅의 caBundle이 둘 다 첫 적용 값이라 서로 맞는다 (kube-prometheus-stack은 같은 이유로 웹훅을 껐다)
+  ignoreDifferences:
+    - kind: Secret
+      jsonPointers: [/data]
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions: [".webhooks[].clientConfig.caBundle"]
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions: [".webhooks[].clientConfig.caBundle"]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true   # 무시한 필드는 동기화 때도 덮어쓰지 않는다 (없으면 "비교만" 무시하고 적용은 한다)
+---
+# 장애를 걸어도 되는 네임스페이스 표시. bank 네임스페이스 객체는 여러 앱이 CreateNamespace로 만들어 두었고 주인이 없다.
+# 여기서 annotation만 얹되, 이 앱을 지워도 bank 네임스페이스는 절대 지우지 않게 Delete=false·Prune=false
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chaos-targets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: deploy/platform/chaos
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true   # 기존 Namespace 객체에 annotation 필드만 얹는다 (다른 필드는 건드리지 않음)

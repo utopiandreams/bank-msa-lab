@@ -1,0 +1,9 @@
+# Chaos Mesh가 장애를 걸어도 되는 곳 = bank 하나 (deploy/argocd/apps/chaos-mesh.yaml "안전장치")
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bank
+  annotations:
+    chaos-mesh.org/inject: enabled
+    # 이 앱이 지워지거나 파일이 사라져도 네임스페이스(= 모든 서비스·DB)를 지우지 않는다
+    argocd.argoproj.io/sync-options: Delete=false,Prune=false

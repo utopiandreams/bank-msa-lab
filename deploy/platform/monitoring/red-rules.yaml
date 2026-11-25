@@ -1,0 +1,29 @@
+# RED 기록 규칙 (2026-11-25, 11주 차 배관을 미리). 자주 쓰는 계산을 Prometheus가 15초마다 미리 해서 새 시계열로 저장한다.
+# 왜: ① SLO·경보 규칙(11주 차)이 같은 식을 반복하지 않게 ② 긴 기간(30일 SLO 소진율)을 조회할 때 원본 히스토그램을 다시 계산하지 않게.
+# 이름 규칙: <집계 기준>:<원래 지표>:<계산> (Prometheus 공식 권장). 대시보드(bank-red.json)는 원본 쿼리를 그대로 쓴다 (읽는 법을 배우려고)
+#
+# 헬스 체크·지표 수집 요청은 뺀다: 안 빼면 트래픽 없이도 초당 0.3건, p50 1ms로 보인다
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: red
+  labels:
+    app: bank
+spec:
+  groups:
+    - name: red.http
+      interval: 15s
+      rules:
+        - record: application:http_server_requests:rate1m
+          expr: sum by (application) (rate(http_server_requests_seconds_count{uri!~"/livez|/readyz|/actuator.*"}[1m]))
+        - record: application:http_server_requests_5xx:rate1m
+          expr: sum by (application) (rate(http_server_requests_seconds_count{uri!~"/livez|/readyz|/actuator.*", status=~"5.."}[1m]))
+        # 비율은 위 두 기록을 나눈다. 5xx가 한 번도 없으면 분자 시계열이 없어 결과가 비므로 0으로 채운다
+        - record: application:http_server_requests_5xx:ratio_rate1m
+          expr: |
+            (application:http_server_requests_5xx:rate1m or application:http_server_requests:rate1m * 0)
+            / application:http_server_requests:rate1m
+        - record: application:http_server_requests_seconds:p99_1m
+          expr: histogram_quantile(0.99, sum by (le, application) (rate(http_server_requests_seconds_bucket{uri!~"/livez|/readyz|/actuator.*"}[1m])))
+        - record: application:http_server_requests_seconds:p50_1m
+          expr: histogram_quantile(0.50, sum by (le, application) (rate(http_server_requests_seconds_bucket{uri!~"/livez|/readyz|/actuator.*"}[1m])))
