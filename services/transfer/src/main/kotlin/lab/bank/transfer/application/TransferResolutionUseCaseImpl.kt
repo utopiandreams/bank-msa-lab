@@ -1,6 +1,7 @@
 package lab.bank.transfer.application
 
 import lab.bank.transfer.application.port.out.TransferRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
@@ -29,7 +30,14 @@ class TransferResolutionUseCaseImpl(
             val batch = transferRepository.findUnresolvedForUpdate(sentBefore, properties.batchSize)
             var resolved = 0
             for (transfer in batch) {
+                val before = transfer.status   // 값으로 떠 둔다 (resolve가 같은 객체를 바꾼다)
                 val after = resolver.resolve(transfer)
+                // 송금마다 한 줄: 송금 ID로 로그를 검색하면 접수 → 결과 불명 → 해소까지 이어진다
+                if (after.status.isFinal) {
+                    log.info("당행 해소: transferId={} {} → {} failureCode={}", transfer.id, before, after.status, after.failureCode)
+                } else {
+                    log.warn("당행 해소 못 함 (다음 회차에 다시): transferId={} {} → {}", transfer.id, before, after.status)
+                }
                 // 기준 시간이 지난 것만 잡았으니, 조회 뒤에도 끝 상태가 아니면 = 조회 자체가 실패(core 장애·타임아웃).
                 // 나머지도 같은 이유로 건마다 타임아웃만큼 기다리며 실패할 것 → 이번 회차는 여기서 끝 (잠금을 오래 쥐지 않게)
                 if (!after.status.isFinal) break
@@ -38,4 +46,7 @@ class TransferResolutionUseCaseImpl(
             resolved
         }
 
+    companion object {
+        private val log = LoggerFactory.getLogger(TransferResolutionUseCaseImpl::class.java)
+    }
 }
