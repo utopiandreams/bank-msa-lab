@@ -77,7 +77,6 @@ case "${1:-status}" in
     running && launchctl bootout "$DOMAIN/$LABEL"
     rm -f "$PLIST"
     pkill -f "k6 run --quiet $RUN/steady.js" 2>/dev/null
-    pkill -f "port-forward svc/core 18080:80" 2>/dev/null
     echo "⚪ 꺼짐" ;;
   status) status ;;
   *) echo "사용법: steadyctl.sh normal | 1 | 2 | 3 | stop | status"; exit 1 ;;

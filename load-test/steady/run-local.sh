@@ -18,7 +18,6 @@ ACCOUNTS="$HERE/steady-accounts.json"; [ -f "$ACCOUNTS" ] || ACCOUNTS="$HERE/../
 STATE="$HOME/.bank-lab/steady"
 LEVEL_FILE="$STATE/level"
 LOG_DIR="$STATE/logs"
-CORE_PORT=18080
 mkdir -p "$LOG_DIR"
 [ -f "$ACCOUNTS" ] || { echo "❌ 계좌 없음: ./load-test/steady/seed.sh 먼저"; exit 1; }
 [ -f "$LEVEL_FILE" ] || echo "normal $(date +%s)" > "$LEVEL_FILE"
@@ -26,13 +25,10 @@ mkdir -p "$LOG_DIR"
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*"; }
 minutes_of() { case "$1" in 1) echo 60 ;; 2) echo 30 ;; 3) echo 10 ;; *) echo 0 ;; esac; }   # 단계별 유지 시간 (steady.js 머리 주석)
 
-# 관리자 통로(입금용 core port-forward). 파드가 바뀌거나 끊기면 kubectl이 끝나므로 다시 연다
-( while true; do kubectl -n bank port-forward svc/core "${CORE_PORT}:80" >/dev/null 2>&1; sleep 2; done ) &
-PF_LOOP=$!
+# 모든 요청이 고객 입구(gateway Ingress)로만 들어간다. 입금도 POST /deposits (2026-11-26 개방) → kubectl·port-forward 필요 없음
 K6=""
 cleanup() {
   [ -n "$K6" ] && kill "$K6" 2>/dev/null
-  kill "$PF_LOOP" 2>/dev/null; pkill -f "port-forward svc/core ${CORE_PORT}:80" 2>/dev/null
   log "멈춤"; exit 0
 }
 trap cleanup INT TERM

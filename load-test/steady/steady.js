@@ -15,14 +15,14 @@
 // 계좌: load-test/steady/seed.sh가 만든 load-test/data/steady-accounts.json
 //
 // 섞는 것 (한 번 = 고객 행동 하나):
-//   70% 당행 송금 · 22% 타행 송금(그중 3%는 없는 계좌 → 외부 거절 → 출금 보상) · 3% 잔액 부족(FAILED) · 5% 입금(돈이 은행으로 들어오는 길)
+//   70% 당행 송금 · 22% 타행 송금(그중 3%는 없는 계좌 → 외부 거절 → 출금 보상) · 3% 잔액 부족(FAILED) · 5% 무통장입금(돈이 은행으로 들어오는 길)
+// 전부 고객 입구(gateway Ingress)로 들어간다
 // 결과 불명은 여기서 만들지 않는다: bank-mock의 "평소 외부 은행" 설정(가끔 응답 지연)이 만든다 (deploy/apps/bank-mock/values.yaml)
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
 
 const GATEWAY = __ENV.GATEWAY_URL || 'http://gateway.172.30.1.240.nip.io';   // 고객 입구 (Ingress)
-const CORE = __ENV.CORE_URL || 'http://localhost:18080';   // 입금은 고객 입구에 없다 (ADR-0002) → 관리자 통로 = core port-forward (run-local.sh가 열어 둔다)
 const SCALE = Number(__ENV.RATE_SCALE || '1');           // 평상시 송금량 배율 (0.5면 절반)
 const LEVEL = __ENV.LEVEL || 'normal';
 const LEVELS = {   // 초당 건수, VU(동시에 기다리는 요청) 준비 수·최대
@@ -111,9 +111,9 @@ export default function (data) {
     while (to.accountId === from.accountId) to = pick(accounts);
     sendTransfer(data.tokens, from, { toAccountId: to.accountId, amount: 900000000 }, 'insufficient');   // 잔액 부족 → FAILED
   } else {
-    // 입금: 급여·타행 입금 흉내. 타행 송금으로 빠져나가는 돈을 채운다 (안 채우면 며칠 뒤 전부 잔액 부족)
-    const res = http.post(`${CORE}/postings/deposits`, JSON.stringify({ accountId: from.accountId, amount: between(200000, 1000000, 10000) }), {
-      headers: { ...json, 'Idempotency-Key': `steady-dep-${crypto.randomUUID()}` },
+    // 입금: 무통장입금 흉내 (gateway POST /deposits, 2026-11-26 개방). 타행 송금으로 빠져나가는 돈을 채운다 (안 채우면 며칠 뒤 전부 잔액 부족)
+    const res = http.post(`${GATEWAY}/deposits`, JSON.stringify({ accountId: from.accountId, amount: between(200000, 1000000, 10000) }), {
+      headers: { ...json, Authorization: `Bearer ${data.tokens[from.userId]}`, 'Idempotency-Key': `steady-dep-${crypto.randomUUID()}` },
       tags: { name: 'deposit' },
     });
     outcome.add(1, { kind: 'deposit', result: `HTTP_${res.status}` });
