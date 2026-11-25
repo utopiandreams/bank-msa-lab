@@ -10,10 +10,9 @@ image:
 # 외부 은행의 행동 = 실험 스위치 (BankMockProperties). 여기 값을 바꿔 push하면 Argo CD가 반영한다
 env:
   BANK_MOCK_REJECT_RATE_PERCENT: "0"
-  # 2026-11-25 8주 차 대사 재현 (이중 지급): 응답을 늦춰(5s > transfer read-timeout 3s) 결과 불명을 만들고,
-  # 조회엔 "없음"이라고 거짓 응답 → transfer 해소 일꾼이 출금을 취소 → 외부는 입금 = 이중 지급 → 대사가 잡는지. 끝나면 되돌린다
-  BANK_MOCK_RESPONSE_DELAY: "5s"
-  BANK_MOCK_LOOKUP_LIES_NOT_FOUND: "true"
+  # 실험 스위치 예 (2026-11-25 이중 지급 재현에 썼다, docs/experiments/week-08-reconciliation.md):
+  # BANK_MOCK_RESPONSE_DELAY: "5s"            # transfer read-timeout(3s)보다 길게 → 결과 불명
+  # BANK_MOCK_LOOKUP_LIES_NOT_FOUND: "true"   # 조회 계약 위반 → 해소 일꾼이 출금 취소 → 이중 지급
 
 # 외부에 열지 않는다: transfer만 클러스터 안에서 부른다 (http://bank-mock)
 ingress:
