@@ -409,3 +409,19 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** **원격 호출이 걸려 있는(진행 중) 상태는 행위로** 짓는다: `WITHDRAW_REQUESTED`, `EXTERNAL_BANK_REQUESTED`, `WITHDRAW_CANCEL_REQUESTED`. 해소 일꾼은 이름만 보고 다음 행동(확인 / 재시도)을 안다. **확정된 사실은 결과로** 짓는다: 끝 상태(`COMPLETED`·`FAILED`·`CANCELLED`)와 아무것도 걸려 있지 않은 중간 체크포인트(`WITHDRAWN` = 출금 확정, 외부엔 확실히 안 보냄). "왜"는 상태가 아니라 데이터(실패 사유 칸)에.
 - 🎤 "상태 머신의 상태 이름은 어떻게 짓나요?" / "상태가 계속 늘어나는 문제는 어떻게 막나요?"
 - 📎 `docs/design-drills/08-unknown-resolution.md` 2부 결정 3, pitfalls 27(원격 호출마다 의도 상태 하나)
+
+### 40. 트레이스가 보인다고 지표도 있는 게 아니다: 직접 만든 HTTP 클라이언트는 지표가 없다
+
+- **장면 (2026-11-25):** RED 대시보드의 "의존성" 행을 만들려고 transfer → core 호출 지표를 찾았는데 하나도 없었다. 트레이스에서는 그 호출이 잘 보이고 있었다.
+- **함정:** 트레이스는 OTel Java 에이전트가 JDK HttpClient를 바이트코드 수준에서 따로 잡는다. 지표(`http.client.requests`)는 Spring의 관측성(ObservationRegistry)에 붙은 클라이언트만 만든다. `RestClient.builder()`로 직접 만들면서 레지스트리를 안 넘기면, 화면 하나(트레이스)만 보고 "계측되고 있다"고 믿게 된다. 장애 때 "core 호출이 느려졌나?"를 그래프로 볼 수 없다.
+- **원칙:** 계측은 신호마다 따로 확인한다 (지표 · 트레이스 · 로그). 새 클라이언트를 만들면 Prometheus에서 그 이름으로 한 번 조회해 본다. 가능하면 프레임워크가 주는 빌더(자동 설정)를 쓴다.
+- 🎤 "트레이싱이 붙어 있는데 왜 지표가 없을 수 있나요?" / "에이전트 방식 계측과 라이브러리 방식 계측의 차이는?"
+- 📎 `services/transfer/.../core/CoreClientConfig.kt` (`observationRegistry`), `docs/infra/README.md` 서비스 RED 대시보드
+
+### 41. 처음 생긴 에러는 rate()에 안 잡힌다: 카운터는 첫 발생 때 생긴다
+
+- **장면 (2026-11-25):** 400 요청 3건, 잔액 부족 422 4건을 보낸 뒤 `increase(...[5m])`로 조회했는데 0이었다. 201은 정상으로 셌다.
+- **함정:** Micrometer는 라벨 조합(예: `status="400"`)을 **처음 발생할 때** 카운터로 만든다. Prometheus가 처음 긁은 값이 이미 3이면 "이전 값"이 없어서 `rate`·`increase`가 그 3을 증가로 보지 않는다. 그래서 재시작 뒤 **첫 번째 에러 폭발**이 에러율 그래프에서 작게 보이거나 아예 안 보인다. 드문 에러일수록 이렇다.
+- **원칙:** 드문 이벤트는 "에러율 0%"를 그대로 믿지 않는다. 중요한 에러는 앱 시작 때 0으로 미리 등록하거나, 카운터 원값(`..._count`)이 생긴 시점을 함께 본다. 경보는 `rate` 하나에만 기대지 않는다.
+- 🎤 "Prometheus의 rate()가 놓치는 경우는?" / "에러가 났는데 대시보드에 안 보였다면 무엇을 의심하나요?"
+- 📎 `docs/infra/README.md` 서비스 RED 대시보드, Prometheus 문서 "rate() and counter resets"
