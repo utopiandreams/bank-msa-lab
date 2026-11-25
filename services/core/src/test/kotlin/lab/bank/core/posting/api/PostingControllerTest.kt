@@ -192,11 +192,11 @@ class PostingControllerTest {
     @Test
     fun `타행 출금 201, 취소 201 후 다시 취소하면 200 - 바디와 멱등 키 헤더 없이 원래 키로`() {
         val acc = fundedAccountForInterbank()
-        val key = "tr-${java.util.UUID.randomUUID()}"
+        val key = "tr-${UUID.randomUUID()}"
         mockMvc.post("/postings/interbank-withdrawals") {
             header("X-User-Id", "u-interbank")
             header("Idempotency-Key", key)
-            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            contentType = MediaType.APPLICATION_JSON
             content = """{"accountId":"$acc","amount":30000}"""
         }.andExpect { status { isCreated() } }
 
@@ -221,10 +221,10 @@ class PostingControllerTest {
     @Test
     fun `입금 거래를 취소하려 하면 422 NOT_CANCELLABLE_ENTRY`() {
         val acc = fundedAccountForInterbank()   // 입금 키는 아래에서 따로
-        val depositKey = "dep-${java.util.UUID.randomUUID()}"
+        val depositKey = "dep-${UUID.randomUUID()}"
         mockMvc.post("/postings/deposits") {
             header("Idempotency-Key", depositKey)
-            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            contentType = MediaType.APPLICATION_JSON
             content = """{"accountId":"$acc","amount":1000}"""
         }.andExpect { status { isCreated() } }
 
@@ -237,10 +237,10 @@ class PostingControllerTest {
     private fun fundedAccountForInterbank(): String {
         val body = mockMvc.post("/accounts") { header("X-User-Id", "u-interbank") }
             .andExpect { status { isCreated() } }.andReturn().response.contentAsString
-        val acc: String = com.jayway.jsonpath.JsonPath.read(body, "$.accountId")
+        val acc: String = JsonPath.read(body, "$.accountId")
         mockMvc.post("/postings/deposits") {
-            header("Idempotency-Key", "seed-${java.util.UUID.randomUUID()}")
-            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "seed-${UUID.randomUUID()}")
+            contentType = MediaType.APPLICATION_JSON
             content = """{"accountId":"$acc","amount":100000}"""
         }.andExpect { status { isCreated() } }
         return acc

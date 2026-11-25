@@ -15,6 +15,8 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import java.nio.file.Files
+import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.util.HexFormat
@@ -38,7 +40,7 @@ class CoreDailyExtractServiceTest {
 
     class FakeStorage : ExtractStorage {
         val objects = linkedMapOf<String, ByteArray>()
-        override fun putFile(objectKey: String, file: java.nio.file.Path) { objects[objectKey] = java.nio.file.Files.readAllBytes(file) }
+        override fun putFile(objectKey: String, file: Path) { objects[objectKey] = Files.readAllBytes(file) }
     }
 
     class FakePublisher : ExtractCompletedPublisher {

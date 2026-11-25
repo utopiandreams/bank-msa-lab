@@ -5,6 +5,7 @@ import lab.bank.bankmock.domain.RejectReason
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Duration
+import java.time.LocalDate
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -64,7 +65,7 @@ class InterbankTransferServiceTest {
         val svc = service()
         svc.transfer("t-ok", "088", "1234567890", 10_000)
         svc.transfer("t-no", "088", "9990001", 5_000)
-        val today = java.time.LocalDate.now(SettlementFile.ZONE)
+        val today = LocalDate.now(SettlementFile.ZONE)
 
         val lines = SettlementFile.write(today, svc.processedOn(today)).trimEnd().lines()
 
@@ -80,7 +81,7 @@ class InterbankTransferServiceTest {
         val svc = svc(BankMockProperties(lookupLiesNotFound = true))
         svc.transfer("t-1", "088", "1234567890", 10_000)
         assertNull(svc.find("t-1"))
-        assertEquals(1, svc.processedOn(java.time.LocalDate.now(SettlementFile.ZONE)).size)
+        assertEquals(1, svc.processedOn(LocalDate.now(SettlementFile.ZONE)).size)
     }
 
     @Test

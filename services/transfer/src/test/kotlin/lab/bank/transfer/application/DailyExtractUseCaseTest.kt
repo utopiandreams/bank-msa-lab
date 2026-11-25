@@ -4,6 +4,7 @@ import lab.bank.transfer.FakeCoreConfiguration
 import lab.bank.transfer.FakeExtractCompletedPublisher
 import lab.bank.transfer.FakeExtractStorage
 import lab.bank.transfer.TestcontainersConfiguration
+import lab.bank.transfer.application.port.out.TransferExtractSource
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -31,7 +32,7 @@ class DailyExtractUseCaseTest {
     @Autowired lateinit var storage: FakeExtractStorage
     @Autowired lateinit var publisher: FakeExtractCompletedPublisher
     @Autowired lateinit var jdbc: JdbcTemplate
-    @Autowired lateinit var sourceBean: lab.bank.transfer.application.port.out.TransferExtractSource
+    @Autowired lateinit var sourceBean: TransferExtractSource
 
     private val day = LocalDate.parse("2001-03-10")
     private val kstMidnight = Instant.parse("2001-03-09T15:00:00Z")   // 2001-03-10 00:00 KST

@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.security.MessageDigest
+import java.sql.Date
 import java.time.Instant
 import java.time.LocalDate
 import java.util.HexFormat
@@ -78,7 +79,7 @@ class ReconRunServiceTest {
         .param("k", key).query { rs, _ -> rs.getString(1) to rs.getString(2) }.optional().orElse(null)
 
     private fun runStatus(date: LocalDate) = jdbc.sql("SELECT status FROM reconciliation.recon_run WHERE business_date = :d ORDER BY finished_at")
-        .param("d", java.sql.Date.valueOf(date)).query(String::class.java).list()
+        .param("d", Date.valueOf(date)).query(String::class.java).list()
 
     @Test
     fun `첫날 - 정상은 남기지 않고, 끝나지 않은 송금은 이월, 실패인데 돈이 움직였거나 송금 없는 전표는 즉시 경보`() {
