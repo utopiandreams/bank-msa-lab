@@ -85,6 +85,16 @@
 
 ## 3. TraceQL 치트시트 (Grafana → Explore → Tempo → TraceQL)
 
+> 2026-11-26 개발자 질문 "이건 어떤 언어야?": Grafana 계열은 **신호마다 질의 언어가 하나씩** 있다. 모양이 비슷해서 하나를 익히면 나머지가 쉽다
+> | 신호 | 언어 | 생김새 |
+> | --- | --- | --- |
+> | 지표 (Prometheus) | **PromQL** | `rate(http_server_requests_seconds_count{application="transfer"}[1m])` |
+> | 로그 (Loki) | **LogQL** | `{app="transfer"} |= "ERROR"` |
+> | 트레이스 (Tempo) | **TraceQL** | `{ resource.service.name = "transfer" && duration > 2s }` |
+> - `{ }` 안의 조건에 맞는 **구간(span)**을 고르고, 그 구간이 든 트레이스를 돌려준다
+> - `resource.` = 어디서 실행됐나 (서비스·파드·버전), `span.` = 그 동작의 속성 (HTTP 경로, DB 문장, 송금 ID), 앞에 점이 없는 것 = 기본 항목 (`duration`, `name`, `status`)
+> - 처음엔 손으로 안 써도 된다: Explore → Tempo → **Search** 탭의 드롭다운으로 고르면 아래에 TraceQL이 만들어진다 (로그·지표도 Builder 모드가 있다)
+
 ```
 # 서비스의 느린 요청
 { resource.service.name = "transfer" && duration > 500ms }
