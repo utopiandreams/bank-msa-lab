@@ -7,12 +7,20 @@ image:
   # 첫 배포는 CI가 이 줄을 고칠 때까지 이미지가 없어 ImagePullBackOff → 태그 커밋 뒤 자동 회복
   tag: "e5b119c2a982dd58f4abbef02df6ceaf73ad185d"
 
-# 외부 은행의 행동 = 실험 스위치 (BankMockProperties). 여기 값을 바꿔 push하면 Argo CD가 반영한다
+# 외부 은행의 행동 = 실험 스위치의 **시작값** (BankMockProperties). 실행 중 변경은 재시작 없이 관리 포트로 (2026-11-26):
+#   kubectl -n bank port-forward deploy/bank-mock 18082:8081
+#   curl -X POST localhost:18082/actuator/experiments -H 'Content-Type: application/json' -d '{"responseDelay":"5s","responseDelayPercent":2}'
+# DB 접속: CloudNativePG가 만든 Secret bank-mock-db-app (deploy/platform/bank-mock-db)
 env:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://bank-mock-db-rw:5432/bankmock
   BANK_MOCK_REJECT_RATE_PERCENT: "0"
   # 실험 스위치 예 (2026-11-25 이중 지급 재현에 썼다, docs/experiments/week-08-reconciliation.md):
   # BANK_MOCK_RESPONSE_DELAY: "5s"            # transfer read-timeout(3s)보다 길게 → 결과 불명
   # BANK_MOCK_LOOKUP_LIES_NOT_FOUND: "true"   # 조회 계약 위반 → 해소 일꾼이 출금 취소 → 이중 지급
+
+secretEnv:
+  SPRING_DATASOURCE_USERNAME: { secret: bank-mock-db-app, key: username }
+  SPRING_DATASOURCE_PASSWORD: { secret: bank-mock-db-app, key: password }
 
 # 외부에 열지 않는다: transfer만 클러스터 안에서 부른다 (http://bank-mock)
 ingress:

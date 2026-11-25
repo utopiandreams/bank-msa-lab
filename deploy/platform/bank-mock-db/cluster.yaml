@@ -1,0 +1,32 @@
+# bank-mock(외부 결제망 흉내) 전용 PostgreSQL (2026-11-26). 처리 기록 = 조회 API의 답 + 일자별 정산 파일의 원본.
+# 메모리 저장이었을 때 재시작마다 기록을 잃어 대사가 거짓 불일치를 냈다 (ADR-0004 변경 기록)
+#
+# 오퍼레이터가 만들어 주는 것: 파드 bank-mock-db-1 + PVC, Service bank-mock-db-rw, Secret bank-mock-db-app (username, password …)
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: bank-mock-db
+spec:
+  instances: 1
+
+  bootstrap:
+    initdb:
+      database: bankmock   # 하이픈 없는 이름 (SQL에서 따옴표 없이 쓰려고)
+      owner: bankmock
+
+  storage:
+    # 타행 송금만 쌓인다. 평소 트래픽(초당 1건, 타행 20%)이면 하루 약 1만 7천 행 × 200B ≈ 3.5MB → 2Gi로 1년 넘게
+    size: 2Gi
+
+  # 다른 서비스 DB와 같은 값으로 시작. 실측 후 조정
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+
+  postgresql:
+    parameters:
+      shared_buffers: "128MB"
+      max_connections: "100"

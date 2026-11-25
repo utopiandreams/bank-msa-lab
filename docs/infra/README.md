@@ -259,6 +259,7 @@ deploy/
 │       ├── redis.yaml            (wave 1, 분산 락 저장소 StatefulSet, 2026-11-22)
 │       ├── garage.yaml           (wave 1, S3 호환 저장소 StatefulSet, 대사 추출 파일, 2026-11-25)
 │       ├── reconciliation-db.yaml / reconciliation.yaml (wave 1 / 2, 일일 대사 서비스, 배포 전략 Recreate, 2026-11-25)
+│       ├── bank-mock-db.yaml     (wave 1, 외부 결제망 흉내의 처리 기록. 메모리 → DB, 2026-11-26)
 │       └── ... gateway, notification(+db), bank-mock, kafka, 관측성 (파일 목록이 곧 설치 목록)
 ├── platform/metallb-config/    # IPAddressPool, L2Advertisement
 ├── platform/core-db/           # CloudNativePG Cluster (Secret core-db-app, Service core-db-rw)
