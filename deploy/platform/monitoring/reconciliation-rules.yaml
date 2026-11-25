@@ -1,0 +1,44 @@
+# 대사 경보 규칙 (ADR-0006 결정 13·14). 지표: services/reconciliation/.../ReconMetrics.
+# Alertmanager는 11주 차라 아직 보낼 곳이 없다 → Prometheus UI(Alerts 탭)·Grafana에서 보인다. 11주 차에 그대로 알림으로 이어진다
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: reconciliation
+  labels:
+    app: reconciliation
+spec:
+  groups:
+    - name: reconciliation
+      rules:
+        # 돈이 새는 사고: 이중 지급(은행 손실)·고객 손실은 이월 없이 바로 (결정 7)
+        - alert: ReconciliationMoneyLoss
+          expr: sum by (pair, kind) (reconciliation_items{status="ESCALATED", kind=~"DOUBLE_PAYMENT|CUSTOMER_LOSS"}) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: "대사: {{ $labels.kind }} {{ $value }}건 ({{ $labels.pair }})"
+            description: "이중 지급 = 우리는 돌려줬는데 외부는 입금 (은행 손실), 고객 손실 = 우리는 완료인데 외부는 거절. recon_item에서 송금 ID 확인 → 착오송금 반환 요청 / 고객 환불"
+
+        # 그 밖의 경보 항목 (송금 없는 전표, 실패인데 돈이 움직임, 금액 다름, 시산표, 하루 넘게 안 풀린 이월)
+        - alert: ReconciliationDiscrepancy
+          expr: sum by (pair, kind) (reconciliation_items{status="ESCALATED", kind!~"DOUBLE_PAYMENT|CUSTOMER_LOSS"}) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "대사 불일치: {{ $labels.kind }} {{ $value }}건 ({{ $labels.pair }})"
+
+        # dead man's switch (결정 13): 추출이 아예 안 돈 배치는 로그도 남기지 않는다 → 받는 쪽이 "안 왔다"를 본다.
+        # 매일 00:05(우리)·01:00(외부)에 오니 26시간 넘게 새 도착이 없으면 경보
+        - alert: ReconciliationExtractMissing
+          expr: time() - reconciliation_last_arrival_seconds > 26 * 3600
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "대사 추출이 26시간 넘게 안 옴: {{ $labels.source }}"
+            description: "그 서비스의 추출 배치 로그 확인 → 내부 API로 다시 추출 (POST /internal/extracts/<날짜>, 외부는 대사 서비스 /internal/external-files/<날짜>)"
+
+        # 지표 자체가 없다 = 대사 서비스가 한 번도 못 받았거나 죽었다 (위 규칙은 지표가 있어야 평가된다)
+        - alert: ReconciliationExtractNeverArrived
+          expr: absent(reconciliation_last_arrival_seconds{source="core"}) or absent(reconciliation_last_arrival_seconds{source="transfer"}) or absent(reconciliation_last_arrival_seconds{source="external"})
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "대사 추출 도착 기록이 없는 출처가 있음 (또는 대사 서비스 지표가 안 보임)"
