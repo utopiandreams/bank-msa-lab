@@ -4,10 +4,8 @@ import lab.bank.common.event.ExtractCompletedEvent
 import lab.bank.core.ledger.application.LedgerUseCase
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
-import java.util.HexFormat
 import java.util.UUID
 
 /**
@@ -28,28 +26,30 @@ class CoreDailyExtractService(
     fun extract(businessDate: LocalDate): ExtractCompletedEvent {
         val from = businessDate.atStartOfDay(ExtractCompletedEvent.BUSINESS_ZONE).toInstant()
         val to = businessDate.plusDays(1).atStartOfDay(ExtractCompletedEvent.BUSINESS_ZONE).toInstant()
-        val rows = ledger.entriesCreatedBetween(from, to, TRANSFER_ENTRY_TYPES)
-        val totals = ledger.totalsBetween(from, to)
-        val bytes = CoreExtractCsv.write(rows).toByteArray(Charsets.UTF_8)
-
+        val totals = ledger.totalsBetween(from, to)   // 집계 한 줄이라 메모리 부담 없음
         val extractId = UUID.randomUUID()
         val objectKey = ExtractCompletedEvent.objectKey(ExtractCompletedEvent.SOURCE_CORE, businessDate, extractId)
-        storage.put(objectKey, bytes)
 
-        val event = ExtractCompletedEvent(
-            eventId = UUID.randomUUID(),
-            schemaVersion = ExtractCompletedEvent.SCHEMA_VERSION,
-            source = ExtractCompletedEvent.SOURCE_CORE,
-            businessDate = businessDate,
-            extractId = extractId,
-            objectKey = objectKey,
-            rowCount = rows.size.toLong(),
-            amountSum = rows.sumOf { it.amount },
-            sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),
-            extractedAt = Instant.now(),
-            debitSum = totals.debitSum,
-            creditSum = totals.creditSum,
-        )
+        // 커서로 읽으며 임시 파일에 흘려 쓰기 → 올리기 → 알림 (메모리는 건수와 무관, transfer DailyExtractUseCaseImpl과 같은 모양)
+        val event = ExtractFileWriter.open(CoreExtractCsv.HEADER).use { file ->
+            ledger.forEachEntryCreatedBetween(from, to, TRANSFER_ENTRY_TYPES) { row -> file.append(CoreExtractCsv.line(row), row.amount) }
+            val sha256 = file.finish()
+            storage.putFile(objectKey, file.file)
+            ExtractCompletedEvent(
+                eventId = UUID.randomUUID(),
+                schemaVersion = ExtractCompletedEvent.SCHEMA_VERSION,
+                source = ExtractCompletedEvent.SOURCE_CORE,
+                businessDate = businessDate,
+                extractId = extractId,
+                objectKey = objectKey,
+                rowCount = file.rowCount,
+                amountSum = file.amountSum,
+                sha256 = sha256,
+                extractedAt = Instant.now(),
+                debitSum = totals.debitSum,
+                creditSum = totals.creditSum,
+            )
+        }
         publisher.publish(event)
         log.info("대사 추출 완료 date={} rows={} debit={} credit={} key={}", businessDate, event.rowCount, totals.debitSum, totals.creditSum, objectKey)
         return event

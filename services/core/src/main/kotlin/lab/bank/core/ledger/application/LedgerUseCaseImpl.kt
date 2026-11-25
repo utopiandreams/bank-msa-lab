@@ -5,6 +5,9 @@ import lab.bank.core.ledger.domain.LedgerAccount
 import lab.bank.core.ledger.domain.exception.IdempotencyConflictException
 import lab.bank.core.ledger.domain.exception.OriginalEntryNotFoundException
 import lab.bank.core.ledger.infrastructure.JournalEntryRepository
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.PreparedStatementSetter
+import org.springframework.jdbc.core.RowCallbackHandler
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -13,12 +16,17 @@ import lab.bank.core.shared.IdempotencyKey
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import javax.sql.DataSource
 
 @Service
 class LedgerUseCaseImpl(
     private val journalEntryRepository: JournalEntryRepository,
     private val jdbcClient: JdbcClient,
+    dataSource: DataSource,
 ) : LedgerUseCase {
+
+    // 대사 추출 전용: 1,000줄씩 서버 커서로 (fetchSize). 공용 JdbcTemplate을 건드리지 않으려고 따로 둔다
+    private val streamingJdbc = JdbcTemplate(dataSource).apply { fetchSize = 1_000 }
 
     @Transactional
     override fun recordDeposit(idempotencyKey: IdempotencyKey, accountId: UUID, amount: Amount): RecordedEntry =
@@ -64,31 +72,37 @@ class LedgerUseCaseImpl(
         journalEntryRepository.findByIdempotencyKey(idempotencyKey.value)
             ?.let { EntrySummary(it.id, it.type.name, it.createdAt) }
 
-    // 보고용 쿼리라 SQL (엔티티를 하루치 다 올리면 줄까지 지연 로딩이 터진다). 금액 = 전표의 차변 합
-    override fun entriesCreatedBetween(from: Instant, to: Instant, types: Set<String>): List<EntryExtractRow> =
-        jdbcClient.sql(
+    // 보고용 쿼리라 SQL (엔티티를 하루치 다 올리면 줄까지 지연 로딩이 터진다). 금액 = 전표의 차변 합.
+    // 커서로 흘려 읽는다: fetchSize + 트랜잭션 안(autocommit 끔)이어야 PostgreSQL 드라이버가 결과 전체를 받아 두지 않는다
+    @Transactional(readOnly = true)
+    override fun forEachEntryCreatedBetween(from: Instant, to: Instant, types: Set<String>, action: (EntryExtractRow) -> Unit) {
+        val typeArray = types.toTypedArray()
+        streamingJdbc.query(
             """
             SELECT e.id, e.idempotency_key, e.type, e.created_at, e.reverses_entry_id,
                    (SELECT sum(l.amount) FROM ledger.journal_line l WHERE l.entry_id = e.id AND l.direction = 'DEBIT') AS amount
             FROM ledger.journal_entry e
-            WHERE e.created_at >= :from AND e.created_at < :to AND e.type IN (:types)
+            WHERE e.created_at >= ? AND e.created_at < ? AND e.type = ANY (?)
             ORDER BY e.created_at, e.id
             """,
-        )
-            .param("from", Timestamp.from(from))
-            .param("to", Timestamp.from(to))
-            .param("types", types)
-            .query { rs, _ ->
-                EntryExtractRow(
-                    entryId = rs.getObject("id", UUID::class.java),
-                    idempotencyKey = rs.getString("idempotency_key"),
-                    type = rs.getString("type"),
-                    amount = rs.getLong("amount"),
-                    createdAt = rs.getTimestamp("created_at").toInstant(),
-                    reversesEntryId = rs.getObject("reverses_entry_id", UUID::class.java),
+            PreparedStatementSetter { ps ->
+                ps.setTimestamp(1, Timestamp.from(from)); ps.setTimestamp(2, Timestamp.from(to))
+                ps.setArray(3, ps.connection.createArrayOf("varchar", typeArray))
+            },
+            RowCallbackHandler { rs ->
+                action(
+                    EntryExtractRow(
+                        entryId = rs.getObject("id", UUID::class.java),
+                        idempotencyKey = rs.getString("idempotency_key"),
+                        type = rs.getString("type"),
+                        amount = rs.getLong("amount"),
+                        createdAt = rs.getTimestamp("created_at").toInstant(),
+                        reversesEntryId = rs.getObject("reverses_entry_id", UUID::class.java),
+                    ),
                 )
-            }
-            .list()
+            },
+        )
+    }
 
     override fun totalsBetween(from: Instant, to: Instant): DailyTotals =
         jdbcClient.sql(

@@ -31,6 +31,7 @@ class DailyExtractUseCaseTest {
     @Autowired lateinit var storage: FakeExtractStorage
     @Autowired lateinit var publisher: FakeExtractCompletedPublisher
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var sourceBean: lab.bank.transfer.application.port.out.TransferExtractSource
 
     private val day = LocalDate.parse("2001-03-10")
     private val kstMidnight = Instant.parse("2001-03-09T15:00:00Z")   // 2001-03-10 00:00 KST
@@ -88,6 +89,43 @@ class DailyExtractUseCaseTest {
         assertEquals("transfer_id,kind,amount,status,created_at,updated_at,to_bank_code,to_account_number,external_reject_reason", lines.first())
         // 계좌번호에 쉼표가 있으면 따옴표로 감싼다 (RFC 4180)
         assertTrue(lines.any { it.startsWith(interbank.toString()) && it.contains(",\"110-12,34\",ACCOUNT_NOT_FOUND") }, lines.joinToString("\n"))
+    }
+
+    /**
+     * 대량 (2026-11-25 개발자 지적: 처음 구현은 리스트 → 문자열 → 바이트로 같은 데이터를 여러 벌 들고 있어 100만 건이면 OOM).
+     * 30만 건을 흘려 읽는 동안 붙잡힌 메모리(GC 뒤 사용량)가 **조회 전보다** 건수만큼 늘지 않는지 본다.
+     * 커서(fetchSize + 트랜잭션)가 빠지면 드라이버가 결과 30만 줄을 다 받아 두고 나서야 첫 줄을 넘기므로 첫 줄 시점부터 수십 MB가 잡혀 있다.
+     * (처음엔 "첫 줄 vs 마지막 줄"을 비교했는데, 커서가 없으면 둘 다 높아서 차이가 0 → 커서를 빼도 통과했다. 기준은 조회 전이어야 한다)
+     */
+    @Test
+    fun `30만 건도 메모리에 다 올리지 않고 흘려 쓴다 - 건수·합계·체크섬은 그대로 맞는다`() {
+        val bulkDay = LocalDate.parse("2001-04-01")
+        val start = Instant.parse("2001-03-31T15:00:00Z")   // 2001-04-01 00:00 KST
+        jdbc.update(
+            """INSERT INTO transfer.transfer (id, requester_id, idempotency_key, from_account_id, to_account_id, amount, status, failure_code, core_entry_id, created_at, updated_at, version, kind)
+               SELECT gen_random_uuid(), 'bulk', 'bulk-' || g, gen_random_uuid(), gen_random_uuid(), 1000, 'COMPLETED', NULL, gen_random_uuid(),
+                      CAST(? AS timestamptz) + (g || ' milliseconds')::interval, CAST(? AS timestamptz) + (g || ' milliseconds')::interval, 0, 'DOMESTIC'
+               FROM generate_series(1, 300000) g""",
+            Timestamp.from(start), Timestamp.from(start),
+        )
+        val runtime = Runtime.getRuntime()
+        fun usedAfterGc(): Long { System.gc(); Thread.sleep(50); return runtime.totalMemory() - runtime.freeMemory() }
+        var atFirst = 0L
+        var atLast = 0L
+        var seen = 0
+        val before = usedAfterGc()
+        sourceBean.forEachChangedBetween(start, start.plusSeconds(86_400)) { _ ->
+            seen++
+            if (seen == 1) atFirst = usedAfterGc()
+            if (seen == 300_000) atLast = usedAfterGc()
+        }
+        val event = useCase.extract(bulkDay).let { publisher.events.last() }
+
+        assertEquals(300_000L, event.rowCount)
+        assertEquals(300_000_000L, event.amountSum)
+        assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(storage.objects.getValue(event.objectKey))), event.sha256)
+        val held = maxOf(atFirst, atLast) - before
+        assertTrue(held < 20 * 1024 * 1024, "흘려 읽는 동안 조회 전보다 메모리가 ${held / 1024 / 1024}MB 늘었다 (커서가 안 쓰였다)")
     }
 
     @Test

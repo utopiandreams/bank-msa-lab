@@ -38,7 +38,7 @@ class CoreDailyExtractServiceTest {
 
     class FakeStorage : ExtractStorage {
         val objects = linkedMapOf<String, ByteArray>()
-        override fun put(objectKey: String, content: ByteArray) { objects[objectKey] = content }
+        override fun putFile(objectKey: String, file: java.nio.file.Path) { objects[objectKey] = java.nio.file.Files.readAllBytes(file) }
     }
 
     class FakePublisher : ExtractCompletedPublisher {
