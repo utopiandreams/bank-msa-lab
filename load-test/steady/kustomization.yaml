@@ -1,0 +1,11 @@
+# 평소 트래픽 생성기 (2026-11-26). Argo CD 앱 steady-traffic이 이 폴더를 kustomize로 배포한다.
+# 스크립트는 load-test/ 규칙대로 여기 두고, ConfigMap으로 묶어 파드에 넣는다 (내용이 바뀌면 이름 해시가 바뀌어 파드가 다시 뜬다)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bank
+resources:
+  - deployment.yaml
+configMapGenerator:
+  - name: steady-traffic-script
+    files:
+      - steady.js

@@ -19,7 +19,7 @@ BALANCE="${2:-1000000}"
 GATEWAY="${GATEWAY_URL:-http://gateway.172.30.1.240.nip.io}"
 CORE_LOCAL_PORT=18080
 RUN="$(date +%m%d%H%M)"          # 다시 돌려도 사용자 이름이 겹치지 않게
-OUT="data/accounts.json"
+OUT="${OUT:-data/accounts.json}"   # 평소 트래픽(steady/seed.sh)은 다른 파일로
 mkdir -p data
 
 # 1) 관리자 통로 열기 (스크립트가 끝나면 닫는다)
@@ -29,10 +29,10 @@ trap 'kill $PF_PID 2>/dev/null || true' EXIT
 for _ in $(seq 30); do curl -sf "http://localhost:${CORE_LOCAL_PORT}/livez" >/dev/null && break; sleep 0.5; done
 curl -sf "http://localhost:${CORE_LOCAL_PORT}/livez" >/dev/null || { echo "❌ core port-forward 실패"; exit 1; }
 
-echo "[$(date +%H:%M:%S)] 계좌 ${N}개 × ${BALANCE}원 준비 (사용자 k6-${RUN}-NNN)"
+echo "[$(date +%H:%M:%S)] 계좌 ${N}개 × ${BALANCE}원 준비 (사용자 ${PREFIX:-k6}-${RUN}-NNN)"
 echo "[" > "$OUT"
 for i in $(seq 1 "$N"); do
-  user="k6-${RUN}-$(printf %03d "$i")"
+  user="${PREFIX:-k6}-${RUN}-$(printf %03d "$i")"
   # 2) 고객 경로: 토큰 → 계좌 개설
   token=$(curl -sf -X POST "$GATEWAY/auth/token" -H 'Content-Type: application/json' -d "{\"userId\":\"$user\"}" | jq -r .access_token)
   acc=$(curl -sf -X POST "$GATEWAY/accounts" -H "Authorization: Bearer $token" | jq -r .accountId)

@@ -1,0 +1,30 @@
+# 평소 트래픽 생성기 (2026-11-26, 운영 모드). 클러스터 안에서 하루 종일 낮은 송금량을 흘린다 → 매일 대사·대시보드의 바탕
+# 매니페스트·스크립트: load-test/steady/ (kustomize)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: steady-traffic
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"   # 서비스들 다음
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/utopiandreams/bank-msa-lab.git
+    targetRevision: main
+    path: load-test/steady
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bank
+  # kubectl scale로 잠깐 멈출 수 있게 replicas는 Git과 달라도 그냥 둔다
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: steady-traffic
+      jsonPointers: [/spec/replicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
