@@ -1,0 +1,36 @@
+# reconciliation(대사) 서비스 전용 PostgreSQL (ADR-0006: 회차·예외 항목·인박스·스테이징) (DB per service). CloudNativePG 오퍼레이터가 이 선언을 보고 실제 자원을 만든다.
+#
+# 오퍼레이터가 만들어 주는 것:
+#   - 파드 reconciliation-db-1 + PVC (local-path)
+#   - Service reconciliation-db-rw (쓰기, primary) / reconciliation-db-ro (읽기, replica) / reconciliation-db-r (아무 인스턴스)
+#   - Secret reconciliation-db-app (username, password, uri, jdbc-uri …) ← notification이 이걸로 접속
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: reconciliation-db
+spec:
+  # 지금은 1대. 17주 차 "DB 다운" 실험 때 2~3대로 늘려 페일오버를 본다
+  instances: 1
+
+  bootstrap:
+    initdb:
+      database: reconciliation   # DB 이름
+      owner: reconciliation      # 앱 계정 (비밀번호는 오퍼레이터가 생성해 Secret reconciliation-db-app에 넣는다)
+
+  storage:
+    # 스테이징은 날짜별로 지우고 다시 적재(ADR-0006 결정 17)라 하루치(우리 규모 수 MB)만 남는다
+    size: 2Gi          # StorageClass는 기본값(local-path). 노드에 묶인다는 한계는 docs/infra 참고
+
+  # notification-db와 같은 값으로 시작 (2026-11-18 라이트사이징 근거는 그 파일). 대사는 하루 한 번 몰아서 쓰는 배치라 실측 후 조정
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+
+  postgresql:
+    parameters:
+      # 메모리 limit 512Mi에 맞춘다 (기본값은 더 큰 서버 기준)
+      shared_buffers: "128MB"
+      max_connections: "100"

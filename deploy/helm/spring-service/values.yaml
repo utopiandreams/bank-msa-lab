@@ -5,6 +5,10 @@ name: ""
 
 replicaCount: 1
 
+# 배포 전략: RollingUpdate(기본, 새 파드가 Ready 된 뒤 옛 파드를 내림 = 무중단) | Recreate(옛 파드를 내린 뒤 새로 띄움).
+# Recreate는 "한 번에 하나만 돌아야 하는" 배치용 (reconciliation, ADR-0006 결정 16)
+strategy: RollingUpdate
+
 image:
   repository: ""        # 예: ghcr.io/utopiandreams/core (필수)
   tag: ""               # 커밋 해시. CI가 서비스별 values에서 갱신한다. latest 금지 (필수)

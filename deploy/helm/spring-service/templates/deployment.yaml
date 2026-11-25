@@ -8,10 +8,14 @@ spec:
   replicas: {{ .Values.replicaCount }}
   revisionHistoryLimit: 3
   strategy:
+    {{- if eq .Values.strategy "Recreate" }}
+    type: Recreate        # 옛 파드를 다 내린 뒤 새로 띄운다 (한 번에 하나만 돌아야 하는 배치용, 잠깐 멈춤을 감수)
+    {{- else }}
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1         # 새 파드를 먼저 하나 띄우고
       maxUnavailable: 0   # 새 파드가 Ready가 되기 전에는 기존 파드를 내리지 않는다 → replicas 1이어도 무중단
+    {{- end }}
   selector:
     matchLabels:
       {{- include "spring-service.selectorLabels" . | nindent 6 }}
