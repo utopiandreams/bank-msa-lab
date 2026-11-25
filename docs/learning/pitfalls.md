@@ -425,3 +425,11 @@ TOCTOU = Time-of-check to time-of-use.
 - **원칙:** 드문 이벤트는 "에러율 0%"를 그대로 믿지 않는다. 중요한 에러는 앱 시작 때 0으로 미리 등록하거나, 카운터 원값(`..._count`)이 생긴 시점을 함께 본다. 경보는 `rate` 하나에만 기대지 않는다.
 - 🎤 "Prometheus의 rate()가 놓치는 경우는?" / "에러가 났는데 대시보드에 안 보였다면 무엇을 의심하나요?"
 - 📎 `docs/infra/README.md` 서비스 RED 대시보드, Prometheus 문서 "rate() and counter resets"
+
+### 42. "S3 호환"은 SDK 기본값까지 호환된다는 뜻이 아니다
+
+- **장면 (2026-11-25, 8주 차 대사):** Garage(S3 호환)에 AWS SDK v2(2.46)로 추출 파일을 올리자 클러스터에서 `Invalid payload signature`(400). aws-cli로 손으로 올릴 땐 됐다.
+- **함정:** AWS SDK는 2025년 초부터 기본값으로 **본문을 청크마다 서명(aws-chunked)하고 체크섬을 트레일러로** 붙인다. S3 API를 흉내 내는 저장소(MinIO·Garage·Ceph·각종 클라우드의 "S3 호환")는 이런 새 기본값을 따라오는 속도가 제각각이라, **SDK만 올렸는데** 업로드가 깨진다. 단위 테스트는 가짜 저장소라 통과하고 운영에서 처음 터진다.
+- **원칙:** S3 호환 저장소는 **운영과 같은 클라이언트 설정으로 진짜 저장소 컨테이너에 붙는 테스트**를 하나 둔다 (Testcontainers). 깨지면 청크 서명 끄기(`chunkedEncodingEnabled(false)`), 체크섬은 필요할 때만(`WHEN_REQUIRED`). "호환"은 API 이름이 같다는 뜻이지 기본 동작까지 같다는 뜻이 아니다.
+- 🎤 "S3 대신 MinIO·Ceph 같은 호환 저장소를 쓸 때 주의할 점은?" / "SDK 버전을 올렸더니 운영에서만 깨졌다면?"
+- 📎 `services/reconciliation/.../GarageS3CompatibilityTest.kt`, 세 서비스의 `StorageConfig`
