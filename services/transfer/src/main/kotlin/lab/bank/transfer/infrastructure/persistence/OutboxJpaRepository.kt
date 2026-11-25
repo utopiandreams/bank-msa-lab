@@ -21,4 +21,13 @@ interface OutboxJpaRepository : JpaRepository<OutboxEventJpaEntity, UUID> {
     @Modifying
     @Query("DELETE FROM OutboxEventJpaEntity o WHERE o.publishedAt < :before")
     fun deletePublishedBefore(before: Instant): Int
+
+    // 적체 지표 (OutboxBacklogMetrics): 미발행 행 수와 가장 오래된 미발행 행의 나이(초). 부분 색인 ix_outbox_event_unpublished만 훑는다.
+    // 잠금 없이 읽는다 (지표는 대략이면 된다, 릴레이를 막지 않게). 나이는 DB 시계로 잰다 (created_at도 같은 기준이라 가정, 앱·DB 시계 차이는 무시)
+    @Query(
+        nativeQuery = true,
+        value = "SELECT count(*) AS unpublished, COALESCE(EXTRACT(EPOCH FROM now() - min(o.created_at)), 0)::float8 AS oldestAgeSeconds " +
+            "FROM transfer.outbox_event o WHERE o.published_at IS NULL"
+    )
+    fun backlog(): OutboxBacklogRow
 }
