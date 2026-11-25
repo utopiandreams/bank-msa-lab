@@ -66,6 +66,10 @@ spec:
             scrapeInterval: 15s
             evaluationInterval: 15s
 
+            # 밀어 넣기 받기 (2026-11-25): Prometheus는 원래 "긁어 오는" 쪽인데, Tempo가 트레이스에서 만든 지표(서비스 그래프)는
+            # Tempo가 Prometheus로 밀어 넣는다 (/api/v1/write). 인증이 없으니 Ingress로 열지 않는다 (지금도 Prometheus는 Ingress 없음)
+            enableRemoteWriteReceiver: true
+
             # 디스크: 기간과 크기 중 먼저 닿는 쪽에서 오래된 블록부터 지운다. PVC(10Gi)보다 작게 잡아 디스크 풀을 막는다
             retention: 7d
             retentionSize: 8GB
@@ -107,6 +111,7 @@ spec:
               url: http://tempo.monitoring:3200
               jsonData:
                 nodeGraph: { enabled: true }   # 트레이스 화면에 서비스 간 호출 그림
+                serviceMap: { datasourceUid: prometheus }   # Service Graph 탭: Tempo가 만든 지표(Prometheus)로 서비스 지도를 그린다
           testFramework: { enabled: false }   # `helm test`용 파드. Argo CD는 helm test를 돌리지 않는다
 
           ingress:

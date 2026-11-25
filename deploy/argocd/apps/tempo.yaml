@@ -35,6 +35,25 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 256Mi }
             limits: { memory: 1Gi }   # 조회 때 블록을 메모리에 올린다. 넘으면 OOMKilled → 실측 후 조정
+          # ── 트레이스에서 지표 만들기 (2026-11-25, 10주 차 배관) ─────────────
+          # 들어오는 구간(span)을 보고 지표를 만들어 Prometheus로 밀어 넣는다 (remote write):
+          #   service-graphs: "누가 누구를 불렀나" 쌍(클라이언트 구간 ↔ 서버 구간, 발행 ↔ 소비)마다 호출 수·실패·지연
+          #     → Grafana Explore → Tempo → Service Graph 탭에 서비스 지도(노드·화살표)가 자동으로 그려진다.
+          #     DB·Kafka·Redis처럼 에이전트가 없는 쪽은 구간의 db.name·messaging 속성으로 "가상 노드"가 된다
+          #   span-metrics: 구간 이름별 R·E·D (traces_spanmetrics_*). HTTP가 아닌 일(Kafka 소비, 스케줄러)도 같은 모양으로
+          # 지표가 RED 대시보드(Micrometer)와 겹치지만 출처가 다르다: 앱이 직접 세는 것 vs 트레이스에서 세는 것.
+          # 트레이스 쪽은 샘플링하면 숫자가 줄어든다 (지금은 릴레이 회차만 버리므로 요청 수는 같다)
+          metricsGenerator:
+            enabled: true
+            remoteWriteUrl: http://kps-prometheus.monitoring:9090/api/v1/write   # Prometheus의 remote write 수신기 (kube-prometheus-stack에서 켬)
+            registry:
+              collection_interval: 15s   # Prometheus 수집 간격과 맞춘다
+            storage:
+              path: /var/tempo/generator   # PVC 안 (기본값 /tmp는 재시작하면 사라지는 쓰기 대기열)
+          overrides:
+            defaults:
+              metrics_generator:
+                processors: [service-graphs, span-metrics]
         persistence:
           enabled: true           # 끄면 파드가 재시작할 때 트레이스가 다 사라진다
           storageClassName: local-path
