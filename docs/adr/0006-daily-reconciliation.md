@@ -1,5 +1,5 @@
 # ADR-0006. 일일 대사
-- 상태: 초안 (2026-11-25, 설계 연습 09 리뷰에서 합의. 면접 30초 답변은 개발자 작성 예정)
+- 상태: 구현·클러스터 확인 (2026-11-25. 설계 연습 09 결정 1~22, 실험 기록 `docs/experiments/week-08-reconciliation.md`. 면접 30초 답변은 개발자 작성 예정)
 - 날짜: 2026-11-25
 - 설계 과정: `docs/design-drills/09-reconciliation.md` (결정 1~18), 질답: `docs/learning/reconciliation.md`
 
@@ -55,10 +55,17 @@
 - 나빠지는 것: 서비스 1개(대사) + 저장소 1개(Garage) + 추출 배치 3개 + 이벤트. 운영할 것이 늘어난다.
 - 바뀌는 것: core·transfer·bank-mock에 일자별 추출(파일 + 완료 이벤트), 새 서비스 `reconciliation`(가칭), 클러스터에 Garage.
 
+## 구현하며 정한 것 (2026-11-25)
+- 추출에는 그날 **만들어졌거나 상태가 바뀐** 송금을 싣는다 (결정 21): 보상 중이던 송금이 다음 날 끝나도 이월이 풀린다
+- 비교는 메모리에서 송금 ID로 합쳐 판정 (결정 22, 수천 건 규모). 100만 건이면 스테이징 + FULL OUTER JOIN
+- 같은 (쌍, 날짜)는 (transfer 최신 추출, 상대 최신 추출) 조합마다 한 번. 새 추출이 오면 가장 최근 대사일만 다시 돌린다 (이전 회차 되돌리기 → SUPERSEDED)
+- 외부 파일 형식은 "기관이 정한" H/D/T 레코드(`|` 구분, 트레일러에 건수·합계), 대사 서비스가 번역 (ACL)
+- 지표 `reconciliation_items`·`reconciliation_last_arrival_seconds`, 경보 규칙 `deploy/platform/monitoring/reconciliation-rules.yaml`
+- Garage와 AWS SDK: 청크 서명·체크섬 트레일러를 꺼야 올라간다 (pitfalls 42)
+
 ## 열린 것
-- k6가 남긴 송금 없는 전표: 채널 칸 추가 / 알려진 예외 분류 / 기준 날짜 이후만 중 선택
-- core 쪽 날짜(전표 `created_at`)와 transfer `createdAt`의 경계 차이 → 이월이 받는지 구현 때 확인
+- k6가 남긴 송금 없는 전표(11-23): 대사는 추출이 시작된 11-25부터라 지금은 안 걸린다. 그 날짜를 다시 추출하면 UNEXPECTED_ENTRY로 나온다 → 채널 칸 추가 / 알려진 예외 분류 중 선택
 - 계속 실패하는 보상(수작업 대기 상태)과 대사 불일치의 수작업 처리(조정 전표, maker-checker): 설계 연습 08 2부 "보류"
-- 파일 형식(CSV·JSON Lines), 배치 시각 세부, 서비스 이름
+- 불일치를 찾은 **뒤**의 처리: 착오송금 반환 요청, 수작업 조정 전표(작성자·승인자 분리), 예외 항목을 사람이 닫는 API
 
 ## 면접 30초 답변 (개발자 작성 예정)
