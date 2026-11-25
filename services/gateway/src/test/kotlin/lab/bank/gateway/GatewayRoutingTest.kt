@@ -67,6 +67,27 @@ class GatewayRoutingTest {
     }
 
     @Test
+    fun `입금은 POST deposits로 열려 core의 postings deposits로 넘어간다 - 멱등 키·본문 그대로`() {
+        client.post().uri("/deposits")
+            .header("Idempotency-Key", "dep-1")
+            .header("Content-Type", "application/json")
+            .bodyValue("""{"accountId":"a","amount":1000}""")
+            .exchange()
+            .expectStatus().isCreated
+
+        val r = FakeTransfer.received.single()
+        assertEquals("/postings/deposits", r.path)
+        assertEquals(listOf("dep-1"), r.header("Idempotency-Key"))
+        assertEquals("""{"accountId":"a","amount":1000}""", r.body)
+    }
+
+    @Test
+    fun `입금 경로도 POST만 - GET은 404`() {
+        client.get().uri("/deposits").exchange().expectStatus().isNotFound
+        assertTrue(FakeTransfer.received.isEmpty())
+    }
+
+    @Test
     fun `core의 postings는 gateway에 열지 않는다 - 토큰이 있어도 404이고 아무 데도 전달되지 않는다`() {
         client.post().uri("/postings/transfers").exchange().expectStatus().isNotFound
 

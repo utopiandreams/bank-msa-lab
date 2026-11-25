@@ -16,7 +16,16 @@ spring:
               uri: ${CORE_BASE_URL:http://core}
               predicates:
                 - Path=/accounts/**
-            # core의 /postings(입출금·송금 처리)는 일부러 라우팅하지 않는다: 고객의 송금 입구는 transfer 하나 (ADR-0002 결정 4)
+            # 입금 (2026-11-26 개발자 결정): 무통장입금처럼 누구나 아무 계좌에 넣을 수 있다 (토큰만 있으면, 계좌 주인 검사 없음).
+            # 평소 트래픽이 관리자 통로(port-forward) 없이 고객 입구로만 들어오게. Idempotency-Key 헤더는 그대로 넘어간다
+            - id: core-deposits
+              uri: ${CORE_BASE_URL:http://core}
+              predicates:
+                - Path=/deposits
+                - Method=POST
+              filters:
+                - SetPath=/postings/deposits
+            # core의 /postings 나머지(출금·송금 처리)는 일부러 라우팅하지 않는다: 고객의 송금 입구는 transfer 하나 (ADR-0002 결정 4)
           # 다운스트림 호출 타임아웃 (CLAUDE.md 7장: 외부 호출에는 반드시 타임아웃)
           httpclient:
             connect-timeout: 1000   # ms. 클러스터 내부라 1초 넘으면 대상이 없거나 네트워크 문제
