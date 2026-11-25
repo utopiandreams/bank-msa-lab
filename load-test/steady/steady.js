@@ -2,9 +2,11 @@
 // 목적은 한계 측정이 아니라 "늘 데이터가 흐르는 상태": 매일 대사가 실제 데이터로 돌고, 대시보드에 평소 모양이 생기고,
 // 장애를 걸었을 때 평소와 무엇이 달라지는지 비교할 바탕이 된다.
 //
-// 실행: 클러스터 안 Deployment가 이 스크립트를 무한 반복한다 (load-test/steady/deployment.yaml).
+// 실행: **맥북에서** ./load-test/steady/run-local.sh 가 이 스크립트를 무한 반복한다 (2026-11-26 개발자 결정).
+//   클러스터 밖에 두는 이유: 부하를 주는 쪽이 검사받는 시스템 안에 있으면 노드 장애 때 같이 죽는다 (pitfalls 43).
+//   그리고 진짜 고객과 같은 길로 들어온다: MetalLB IP → Traefik(Ingress) → gateway
 //   한 번 실행 = 다음 정각까지. 매 실행마다 그 시각(KST)의 송금량으로 → 시간대별 패턴이 저절로 생긴다
-// 계좌: load-test/steady/seed.sh가 만든 ConfigMap steady-accounts (/accounts/accounts.json)
+// 계좌: load-test/steady/seed.sh가 만든 load-test/data/steady-accounts.json
 //
 // 섞는 것 (한 번 = 고객 행동 하나):
 //   70% 당행 송금 · 22% 타행 송금(그중 3%는 없는 계좌 → 외부 거절 → 출금 보상) · 3% 잔액 부족(FAILED) · 5% 입금(돈이 은행으로 들어오는 길)
@@ -13,10 +15,10 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
 
-const GATEWAY = __ENV.GATEWAY_URL || 'http://gateway.bank.svc';
-const CORE = __ENV.CORE_URL || 'http://core.bank.svc';   // 입금은 고객 입구에 없다 (ADR-0002) → 클러스터 안 관리자 통로
+const GATEWAY = __ENV.GATEWAY_URL || 'http://gateway.172.30.1.240.nip.io';   // 고객 입구 (Ingress)
+const CORE = __ENV.CORE_URL || 'http://localhost:18080';   // 입금은 고객 입구에 없다 (ADR-0002) → 관리자 통로 = core port-forward (run-local.sh가 열어 둔다)
 const SCALE = Number(__ENV.RATE_SCALE || '1');           // 전체 송금량 배율 (0.5면 절반)
-const accounts = JSON.parse(open('/accounts/accounts.json'));
+const accounts = JSON.parse(open(__ENV.ACCOUNTS_FILE || '../data/steady-accounts.json'));
 
 // KST 시각별 초당 건수. 새벽은 한산, 점심·퇴근 무렵이 가장 붐빈다. 평균 약 0.8건/초 ≈ 하루 7만 건
 const RATE_BY_HOUR = [
@@ -38,7 +40,7 @@ export const options = {
       executor: 'constant-arrival-rate',
       rate: perMinute,
       timeUnit: '1m',
-      duration: `${Math.max(secondsToNextHour, 30)}s`,
+      duration: __ENV.SMOKE_SECONDS ? `${__ENV.SMOKE_SECONDS}s` : `${Math.max(secondsToNextHour, 30)}s`,   // SMOKE_SECONDS=20: 동작 확인용 짧은 실행
       preAllocatedVUs: 5,
       maxVUs: 50,   // 외부 지연으로 응답이 늦어지면 동시에 기다리는 요청이 는다. 모자라면 dropped_iterations = 그 자체가 신호
     },
