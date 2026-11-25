@@ -198,7 +198,7 @@ terraform destroy && terraform apply   # 이후 2), 3) 다시 실행
 - Raycast 등록: Raycast 설정 → Extensions → Script Commands → Add Directories → `infra/scripts/raycast` 선택
 - **평소 트래픽 (2026-11-26, 운영 모드):** 부하는 클러스터 밖 맥북에서 준다 (클러스터 안에 두면 노드 장애 때 같이 죽는다, pitfalls 43). `steadyctl.sh`가 launchd 에이전트 `lab.bank.steady-traffic`로 등록해 터미널을 닫거나 재시작해도 계속 돈다. 상태·기록은 `~/.bank-lab/steady/` (runner.log, logs/)
   - 실행 파일을 `~/.bank-lab/steady/run/`에 복사해서 돌린다: 저장소가 `~/Desktop` 아래라 launchd 작업은 macOS 개인정보 보호(TCC)에 막힌다
-  - **로컬 네트워크 권한:** launchd로 띄운 프로그램이 집 네트워크(172.30.1.x)에 처음 붙으면 macOS가 프로그램마다 허락을 받는다. 허락 전엔 `connect: no route to host` (네트워크 문제처럼 보여서 헷갈린다). 시스템 설정 → 개인정보 보호 및 보안 → 로컬 네트워크에서 **k6, kubectl** 켜기. 터미널·Raycast에서 직접 돌리면 그 앱의 권한을 써서 안 보인다
+  - **로컬 네트워크 권한:** launchd로 띄운 프로그램이 집 네트워크(172.30.1.x)에 처음 붙으면 macOS가 프로그램마다 허락을 받는다. 허락 전엔 `connect: no route to host` (네트워크 문제처럼 보여서 헷갈린다). 시스템 설정 → 개인정보 보호 및 보안 → 로컬 네트워크에서 **k6** 켜기 (실행기는 kubectl을 안 쓴다: 입금도 gateway `POST /deposits`). 터미널·Raycast에서 직접 돌리면 그 앱의 권한을 써서 안 보인다
 - 공통 설정: `infra/scripts/lab.env` (IP, MAC, VMID, PATH)
 - **호스트 단위 제어 + 병렬 (2026-11-18 변경):** 대상은 `all`(기본) / `proxmox` / `proxmox2`. 호스트마다 백그라운드로 동시에 진행하고, 출력 줄 앞에 `[호스트]`가 붙는다. 한 대가 안 켜져도 나머지는 계속 간다.
   - 켜기: VM은 컨트롤 플레인을 기다리지 않고 한꺼번에 시작한다 (k3s agent가 서버에 알아서 재접속). k8s Ready 확인은 컨트롤 플레인이 있는 proxmox가 끝나는 즉시 한다 (proxmox2의 5분 대기에 묶이지 않게).
@@ -375,6 +375,29 @@ GitOps 함정 메모:
 - gateway의 서버 지표는 라우팅된 요청을 `uri="UNKNOWN"`으로 뭉친다 → 라우트별은 `spring_cloud_gateway_requests`(`routeId`)
 - 히스토그램(p99용)을 `http.client.requests`·`spring.cloud.gateway.requests`·`spring.kafka.listener`·`spring.kafka.template`·`tasks.scheduled.execution`에도 켰다 (서비스 공통 블록)
 - **함정:** `RestClient.builder()`로 직접 만든 클라이언트는 `observationRegistry`를 넘기지 않으면 지표가 없다. 트레이스는 OTel 에이전트가 따로 잡아서 보이니 "계측되고 있다"고 착각하기 쉽다
+
+### 관측성·실험 배관 확장 (2026-11-25, 10~12주 차 배관을 8주 차와 병렬로)
+
+| 무엇 | 어디 | 확인 / 접속 |
+| --- | --- | --- |
+| **Loki** (Monolithic, 파일시스템, 보관 72h, PVC 10Gi) | `deploy/argocd/apps/loki.yaml` | Grafana → Explore → Loki → `{app="transfer"}` |
+| **Alloy** (DaemonSet, `/var/log/pods` 읽기, cp 노드 포함) | `deploy/argocd/apps/alloy.yaml` | 우리 서비스만 여러 줄 묶기 + `trace_id`를 구조화 메타데이터로 (라벨 아님), `filename` 라벨 버림 |
+| 로그 줄의 `trace_id`·`span_id` | 서비스 `application.yaml` `logging.pattern.correlation` | 값은 OTel 에이전트가 MDC에 넣음. 요청 밖 줄은 빈 값 |
+| 로그 ↔ 트레이스 | kube-prometheus-stack Grafana 데이터 소스 (Tempo `tracesToLogsV2`, Loki `derivedFields`) | 프로비저닝 파일의 `${...}`는 환경변수로 치환되므로 `$${...}` |
+| **Tempo 서비스 그래프** (service-graphs + span-metrics → remote write) | `tempo.yaml` + Prometheus `enableRemoteWriteReceiver` | Explore → Tempo → Service Graph. 지표 `traces_service_graph_*`, `traces_spanmetrics_*` |
+| **Alertmanager** (받는 곳 null) | `kube-prometheus-stack.yaml` | `kubectl -n monitoring port-forward svc/kps-alertmanager 9093`, Grafana Alerting → Choose Alertmanager = Alertmanager |
+| RED 기록 규칙 | `deploy/platform/monitoring/red-rules.yaml` | `application:http_server_requests:rate1m` 등 |
+| Redis exporter (별도 Deployment, redis 재시작 없이) | `deploy/platform/redis/redis-exporter.yaml` | `redis_up` |
+| Garage 지표 (관리 포트 3903) | `deploy/platform/monitoring/garage-pod-monitor.yaml` | `api_s3_*` |
+| **k6-operator** 1.7.0 | `deploy/argocd/apps/k6-operator.yaml` | TestRun CRD. 시험 실행은 남음 |
+| **Chaos Mesh** 2.8.8 (controller 1대, dashboard 인증 끔, DNS 서버 끔) | `deploy/argocd/apps/chaos-mesh.yaml` | `kubectl -n chaos-mesh port-forward svc/chaos-dashboard 2333`. 실제 주입 시험은 남음 |
+
+결정과 함정:
+- Chaos Mesh는 `enableFilterNamespace` + bank 네임스페이스 annotation(`deploy/platform/chaos`, Delete=false·Prune=false)으로 **bank에만** 장애를 건다. k3s containerd 소켓은 `/run/k3s/containerd/containerd.sock`
+- Chaos Mesh 웹훅 인증서는 helm 템플릿이 무작위로 만든다 → Argo CD `ignoreDifferences` + `RespectIgnoreDifferences` (없으면 영원히 OutOfSync)
+- Alloy 필터를 컨테이너 이름으로 걸었다가 안 걸림 (공통 차트의 컨테이너 이름은 전부 `app`) → app 라벨로
+- 메모리 추가(요청 기준): Loki 256Mi, Alloy 64Mi × 6, Chaos Mesh 약 260Mi, Alertmanager 32Mi, k6-operator 64Mi, exporter 16Mi → 약 1GB
+- CI 태그 커밋이 충돌을 삼키던 문제 수정 (pitfalls 44)
 
 Grafana 관리자 계정 (Git 밖, 클러스터에서 한 번):
 ```bash

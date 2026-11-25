@@ -492,6 +492,31 @@
 - 내일 대사에서 오늘 MISSING_EXTERNAL 12건이 경보로 올라가는지 확인 (bank-mock 메모리 한계)
 - ADR-0006 면접 30초 답변 (개발자)
 
+## 2026-11-25 (밤) ~ 26 · 10~12주 차 배관 앞당김: RED 대시보드, Loki, 서비스 그래프, Alertmanager, k6-operator·Chaos Mesh
+
+**한 일 (Claude, 8주 차와 병렬)**
+- 서비스 RED 대시보드 `bank-red.json`: 입구 숫자 → 서비스 비교 → 상세 → 의존성(부르는 쪽 vs 받는 쪽) → 비동기 → 자원 링크, 패널마다 읽는 법. 히스토그램 대상 추가(클라이언트·라우트·Kafka·스케줄러)
+- Loki + Alloy + 로그 줄마다 trace_id, Grafana 로그 ↔ 트레이스 링크 / Tempo 서비스 그래프 / Redis·Garage 지표 / Outbox 적체 지표(transfer, 테스트 2개) + 패널
+- Alertmanager 켬(받는 곳 null), RED 기록 규칙 / k6-operator·Chaos Mesh 설치 (bank 네임스페이스만)
+- 공부 자료: `observability.md` 1-4(대시보드 구성법: RED, 넓게 → 좁게, 흔한 실수), `alerting.md`(경보를 처음부터 끝까지, 누가 만드나)
+
+**결정 (개발자)**
+- RED 대시보드는 8주 차와 병렬, 판독 순서 연습은 뒤로. "이런 건 미리 해 두는 게 좋았다" → 배관은 앞당겨 해 둔다
+- 에러율은 5xx만, 4xx는 따로 (표준)
+- 알림은 휴대폰 → Telegram 선호, 연동은 나중에
+
+**버그·트러블슈팅**
+- transfer RestClient에 지표가 하나도 없었다 (직접 만든 빌더에 observationRegistry 누락, 트레이스는 에이전트가 따로 잡아 몰랐음, pitfalls 40)
+- 400·422를 보냈는데 `increase()`가 0 (첫 발생 때 카운터가 생김, pitfalls 41)
+- **CI가 초록인데 transfer 새 이미지가 배포 안 됨**: 태그 줄 rebase 충돌을 재시도 루프가 삼킴 → 매번 최신 main 위에서 다시 쓰고 못 올리면 실패 (pitfalls 44). 수정 직후 서비스 6개 동시 태그 커밋 성공
+- Alloy 필터를 컨테이너 이름으로 걸었는데 우리 컨테이너는 전부 `app` → app 라벨로
+- 경보 확인: `NodeMemoryMajorPagesFaults`(bank-w1, 초당 약 620, 메모리 20%·스왑 0 → 노드 부족 아님, 저절로 해제), `ReconciliationMoneyLoss`(이중 지급 재현 1건 남음), Watchdog
+
+**다음**
+- 확인 남음: 로그 trace_id 구조화 메타데이터(Alloy 수정분), Outbox 지표 실제 값, Chaos Mesh 실제 주입(bank-mock 지연 1분)·k6-operator TestRun 시험
+- 판독 연습: 트레이싱(플레이북 1-1) + RED 대시보드 같이 읽기 (천천히, 층 하나씩)
+- Telegram 연동, exemplar(OTel API를 서비스 5개에 추가 + 코드 위치 결정 필요)
+
 ---
 
 ## 이력서 소재 (계속 갱신)

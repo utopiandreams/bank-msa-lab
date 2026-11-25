@@ -191,11 +191,16 @@
   - 2026-11-18 결정: **기본 스택만 앞당긴다** (노드 확장 전에). `kube-prometheus-stack`(Prometheus·Grafana, 노드·쿠버네티스 기본 대시보드) + Strimzi·CloudNativePG 대시보드 + etcd 지표 + 앱 지표(`micrometer-registry-prometheus`, 2026-11-18 승인: JVM·API별 지연·커넥션 풀). 이유: 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고, 같은 대시보드를 일찍부터 반복해 봐야 평소 모양이 눈에 익는다. 서비스별 RED 대시보드 설계, Loki·Tempo, SLO·알림은 10~11주 차 그대로
   - 2026-11-25 결정: **RED 대시보드는 8주 차와 병렬**로 지금, **Loki·로그 traceId는 8주 차 뒤 트레이싱 판독 연습 직전**에
   - [x] 서비스 RED 대시보드 `deploy/grafana/dashboards/bank-red.json` (2026-11-25, Claude가 만들고 개발자와 같이 읽는 연습): 입구 숫자 → 서비스 비교 → 서비스 상세 → 의존성(부르는 쪽 vs 받는 쪽) → 비동기(발행·소비·스케줄러) → 자원 링크. 에러율은 5xx만, 4xx는 따로. 함께 고친 것: transfer RestClient에 지표가 없던 것(`observationRegistry`), 발행·소비·스케줄러·라우트 히스토그램
-  - [ ] 대시보드 같이 읽기 연습 (다음 세션)
+  - [x] 로그 (2026-11-25, 판독 연습 전에 앞당김): Loki(Monolithic) + Alloy(노드마다, 파드 로그 파일 수집), 로그 줄마다 `trace_id`(에이전트 MDC → Boot 상관관계 패턴), Grafana 로그 ↔ 트레이스 클릭 이동. **trace_id 구조화 메타데이터 추출은 필터 수정 후 확인 남음**
+  - [x] 덤 (2026-11-25): Tempo 서비스 그래프(트레이스 → 서비스 지도, 13주 차 토폴로지 재료), Redis exporter · Garage 지표, Outbox 적체 지표(6주 차 남은 것) + 대시보드 패널
+  - [ ] 대시보드 같이 읽기 연습 (판독 연습과 함께, 뒤로 미룸)
 - [ ] 11주: 송금 성공률·p99 SLO 정의, Alertmanager 알림
+  - [x] 배관 앞당김 (2026-11-25): Alertmanager 켬(받는 곳 null), RED 기록 규칙(`red-rules.yaml`). 공부 자료 `docs/learning/alerting.md` (지표 코드 → 규칙 → 라우팅 → 화면)
+  - [ ] 알림 채널: **Telegram**(개발자 선호, 연동은 나중에). critical 방 / warning 방 분리, Watchdog은 Healthchecks.io 검토
+  - [ ] SLO 정의(개발자) + 서비스 경보(송금 에러율·p99, Outbox 적체, 결과 불명 체류). 경보를 서비스 values에 몇 줄로 쓰는 틀은 그때 결정
 
 ### Phase 4. 장애 실험 컨트롤 패널 (12~13주) — 끝나면 시연 가능
-- [ ] 12주: k6-operator·Chaos Mesh 설치, `chaos-control`이 TestRun·PodChaos·NetworkChaos 생성, 각 서비스에 실험 스위치 API(락 전략, 멱등 처리, 서킷 브레이커 on/off), RBAC으로 실험 네임스페이스만 접근
+- [ ] 12주: ~~k6-operator·Chaos Mesh 설치~~ (2026-11-25 앞당겨 설치: Chaos Mesh는 annotation 붙은 bank 네임스페이스에만, **실제 장애 주입 시험은 남음**), `chaos-control`이 TestRun·PodChaos·NetworkChaos 생성, 각 서비스에 실험 스위치 API(락 전략, 멱등 처리, 서킷 브레이커 on/off), RBAC으로 실험 네임스페이스만 접근
 - [ ] 13주: 화면 목업 확정 후 `web` 구현 — 시나리오 버튼·스위치, SSE 실시간 지표(TPS, p99, 에러율, 컨슈머 랙, 파드 상태), Grafana 임베드, 잔액 정합성 지표. Phase 2 시나리오(동시 출금, 중복 메시지)를 버튼으로 이전
 
 ### Phase 5. 장애와 성능 (14~17주) — 실험마다 패널에 버튼 추가
