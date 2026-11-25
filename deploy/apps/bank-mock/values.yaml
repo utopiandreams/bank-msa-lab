@@ -5,7 +5,7 @@ image:
   repository: ghcr.io/utopiandreams/bank-mock
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
   # 첫 배포는 CI가 이 줄을 고칠 때까지 이미지가 없어 ImagePullBackOff → 태그 커밋 뒤 자동 회복
-  tag: "f4d2ec783ee65325c0d210468380c99a68809d64"
+  tag: "2ba28eece610131658f8f8b140b7574f687aa628"
 
 # 외부 은행의 행동 = 실험 스위치 (BankMockProperties). 여기 값을 바꿔 push하면 Argo CD가 반영한다
 env:
