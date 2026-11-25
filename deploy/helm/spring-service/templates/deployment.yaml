@@ -75,7 +75,7 @@ spec:
               value: {{ .Values.tracing.sampler | quote }}
             - name: OTEL_METRICS_EXPORTER        # 지표는 Micrometer → Prometheus가 이미 한다 (중복 방지)
               value: none
-            - name: OTEL_LOGS_EXPORTER           # 로그는 10주 차 Loki
+            - name: OTEL_LOGS_EXPORTER           # 로그는 stdout → 노드의 Alloy가 파일을 읽어 Loki로 (deploy/argocd/apps/alloy.yaml). 에이전트는 MDC에 trace_id만 넣는다
               value: none
             - name: POD_NAME
               valueFrom:

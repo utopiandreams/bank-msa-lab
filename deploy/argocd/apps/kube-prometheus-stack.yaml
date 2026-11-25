@@ -112,6 +112,29 @@ spec:
               jsonData:
                 nodeGraph: { enabled: true }   # 트레이스 화면에 서비스 간 호출 그림
                 serviceMap: { datasourceUid: prometheus }   # Service Graph 탭: Tempo가 만든 지표(Prometheus)로 서비스 지도를 그린다
+                # 트레이스 → 로그: 구간 옆 "Logs for this span" 버튼 = 그 요청의 로그만 (Loki에서 trace_id로)
+                # $$ = Grafana 프로비저닝 파일은 ${...}를 환경변수로 바꿔 버려서, 글자 그대로 두려면 $를 두 번 쓴다
+                tracesToLogsV2:
+                  datasourceUid: loki
+                  spanStartTimeShift: "-2m"
+                  spanEndTimeShift: "2m"
+                  customQuery: true
+                  query: '{namespace="bank"} | trace_id="$${__trace.traceId}"'
+            # 로그 저장소 (10주 차, deploy/argocd/apps/loki.yaml). Explore → Loki → {app="transfer"} 처럼 라벨로 고른다
+            - name: Loki
+              uid: loki
+              type: loki
+              access: proxy
+              url: http://loki.monitoring:3100
+              jsonData:
+                maxLines: 1000
+                # 로그 → 트레이스: 줄 안의 trace_id=... 를 링크로 바꿔 Tempo에서 연다
+                derivedFields:
+                  - name: TraceID
+                    matcherRegex: 'trace_id=([0-9a-f]{32})'
+                    url: '$${__value.raw}'
+                    datasourceUid: tempo
+                    urlDisplayLabel: 트레이스 보기
           testFramework: { enabled: false }   # `helm test`용 파드. Argo CD는 helm test를 돌리지 않는다
 
           ingress:

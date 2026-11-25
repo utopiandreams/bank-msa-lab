@@ -1,0 +1,127 @@
+# Alloy (2026-11-25, 10주 차): 노드마다 하나씩 떠서 그 노드의 파드 로그 파일을 읽어 Loki로 보내는 수집기.
+# Promtail의 후속 (Promtail은 2026-03 지원 종료). AWS로 치면 CloudWatch 에이전트 / Fluent Bit.
+#
+# 왜 파일을 읽나: 앱이 Loki에 직접 보내게 하면 앱마다 설정이 필요하고, 앱이 죽기 직전 로그(기동 실패·OOM 직전)를 잃기 쉽다.
+# 컨테이너가 stdout에 쓰면 런타임이 노드의 파일로 남기고, 수집기가 그걸 읽는다 = 앱은 Loki를 모른다 (12-factor 로그).
+# Kafka·PostgreSQL·Traefik 같은 남의 파드 로그도 같은 길로 들어온다
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.16.0   # Alloy v1.22.0
+    helm:
+      releaseName: alloy
+      valuesObject:
+        fullnameOverride: alloy
+        controller:
+          type: daemonset
+          # 컨트롤 플레인(bank-cp)의 taint도 견딘다 → 두뇌 노드의 로그도 수집 (node-exporter와 같은 이유)
+          tolerations:
+            - operator: Exists
+        alloy:
+          mounts:
+            varlog: true   # 노드의 /var/log를 읽기 전용으로 (파드 로그 파일이 /var/log/pods에 있다)
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          configMap:
+            content: |
+              // 이 노드에 떠 있는 파드만 (DaemonSet이라 노드마다 하나씩, 자기 노드의 로그 파일만 읽는다)
+              discovery.kubernetes "pods" {
+                role = "pod"
+                selectors {
+                  role  = "pod"
+                  field = "spec.nodeName=" + sys.env("HOSTNAME")
+                }
+              }
+
+              // 라벨 붙이기: 조회할 때 범위를 좁히는 용도. 값의 종류가 적은 것만 (namespace·app·pod·container·node)
+              discovery.relabel "pods" {
+                targets = discovery.kubernetes.pods.targets
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_node_name"]
+                  target_label  = "node"
+                }
+                // app: 표준 라벨(app.kubernetes.io/name)이 있으면 그것, 없으면 app 라벨 (우리 서비스·redis·garage는 app)
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app"]
+                  separator     = ";"
+                  regex         = "^;*([^;]+).*$"
+                  target_label  = "app"
+                }
+                // 컨테이너 런타임(containerd)이 쓰는 로그 파일 위치: /var/log/pods/<네임스페이스>_<파드>_<uid>/<컨테이너>/0.log
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+                  separator     = "/"
+                  target_label  = "__path__"
+                  replacement   = "/var/log/pods/*$1/*.log"
+                }
+              }
+
+              local.file_match "pods" {
+                path_targets = discovery.relabel.pods.output
+              }
+
+              loki.source.file "pods" {
+                targets    = local.file_match.pods.targets
+                forward_to = [loki.process.pods.receiver]
+              }
+
+              loki.process "pods" {
+                // containerd 형식 "<시각> stdout F <내용>"을 벗긴다
+                stage.cri {}
+
+                // 우리 Spring 서비스: 예외 스택 트레이스는 여러 줄이다 → 날짜로 시작하지 않는 줄은 앞 줄에 붙인다 (안 그러면 한 예외가 수십 줄로 흩어진다)
+                // + trace_id를 꺼내 "구조화 메타데이터"로 (라벨로 두면 요청마다 새 스트림 = 카디널리티 폭발)
+                stage.match {
+                  selector = "{namespace=\"bank\", container=~\"gateway|core|transfer|notification|bank-mock|reconciliation\"}"
+                  stage.multiline {
+                    firstline     = "^\\d{4}-\\d{2}-\\d{2}T"
+                    max_wait_time = "3s"
+                  }
+                  stage.regex {
+                    expression = "trace_id=(?P<trace_id>[0-9a-f]{32})"
+                  }
+                  stage.structured_metadata {
+                    values = { trace_id = "" }
+                  }
+                }
+
+                forward_to = [loki.write.default.receiver]
+              }
+
+              loki.write "default" {
+                endpoint {
+                  url = "http://loki.monitoring:3100/loki/api/v1/push"
+                }
+              }
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
