@@ -4,9 +4,12 @@ import jakarta.validation.Valid
 import lab.bank.bankmock.application.IdempotencyConflictException
 import lab.bank.bankmock.application.InterbankTransferService
 import lab.bank.bankmock.application.ProcessingDeadlineExceededException
+import lab.bank.bankmock.application.SettlementFile
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.time.LocalDate
 
 /**
  * 외부 결제망 입구. 보내는 쪽(transfer)이 Idempotency-Key = 송금 ID로 부른다 (ADR-0004 결정 4).
@@ -42,6 +46,14 @@ class InterbankController(private val service: InterbankTransferService) {
         service.find(idempotencyKey)
             ?.let { InterbankLookupResponse.found(it) }
             ?: InterbankLookupResponse.notFound(idempotencyKey)
+
+    /**
+     * 정산 파일 제공 채널 (설계 연습 09 결정 19): 외부 기관이 일자별 처리 내역을 **자기 형식으로** 준다 (SettlementFile).
+     * 실제로는 전용선·SFTP·기관 API. 받아 가는 건 우리 쪽(대사 서비스 수신 작업)의 일이다
+     */
+    @GetMapping("/settlement-files/{date}", produces = [MediaType.TEXT_PLAIN_VALUE])
+    fun settlementFile(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate): String =
+        SettlementFile.write(date, service.processedOn(date))
 
     // 처리 상한을 넘겨 포기: "판정 못 함"이라 5xx (거절이 아님). 보내는 쪽은 결과 불명으로 다룬다
     @ExceptionHandler(ProcessingDeadlineExceededException::class)

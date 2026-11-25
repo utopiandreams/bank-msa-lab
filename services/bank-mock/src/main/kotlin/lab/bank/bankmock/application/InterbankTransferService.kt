@@ -4,6 +4,8 @@ import lab.bank.bankmock.domain.InterbankOutcome
 import lab.bank.bankmock.domain.InterbankTransfer
 import lab.bank.bankmock.domain.RejectReason
 import org.springframework.stereotype.Service
+import java.time.Instant
+import java.time.LocalDate
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
@@ -44,8 +46,19 @@ class InterbankTransferService(
         return checked(recorded, toBankCode, toAccountNumber, amount)
     }
 
-    /** 조회: 기록이 있으면 그 판정, 없으면 null (= 처리 안 함. 처리 상한이 지난 뒤라면 앞으로도 처리하지 않는다) */
-    fun find(idempotencyKey: String): InterbankTransfer? = transfers[idempotencyKey]
+    /**
+     * 조회: 기록이 있으면 그 판정, 없으면 null (= 처리 안 함. 처리 상한이 지난 뒤라면 앞으로도 처리하지 않는다).
+     * 실험 스위치 lookupLiesNotFound: 외부가 **조회 계약을 어긴다** (처리했는데 조회엔 "없음"). 정산 파일엔 그대로 나온다
+     * → 보내는 쪽 해소 일꾼이 출금을 취소해 이중 지급이 나고, 대사만 그걸 잡는다 (ADR-0006 판정표, 8주 차 재현)
+     */
+    fun find(idempotencyKey: String): InterbankTransfer? =
+        if (properties.lookupLiesNotFound) null else transfers[idempotencyKey]
+
+    /** 정산 파일용: 그날(Asia/Seoul) 판정한 전부 (성공·거절), 처리 시각 순 */
+    fun processedOn(date: LocalDate): List<InterbankTransfer> =
+        transfers.values
+            .filter { it.processedAt.atZone(SettlementFile.ZONE).toLocalDate() == date }
+            .sortedWith(compareBy({ it.processedAt }, { it.idempotencyKey }))
 
     // 처리(판정 전) 지연. 상한을 넘으면 상한까지만 기다리고 포기한다: 실제 시스템도 상한에서 끊지, 끝까지 기다렸다 버리지 않는다
     private fun process(idempotencyKey: String) {
@@ -77,6 +90,7 @@ class InterbankTransferService(
             amount = amount,
             outcome = if (reason == null) InterbankOutcome.ACCEPTED else InterbankOutcome.REJECTED,
             rejectReason = reason,
+            processedAt = Instant.now(),
         )
     }
 }

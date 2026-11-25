@@ -15,6 +15,8 @@ import java.time.Duration
  * @property processingDeadline **처리 상한 (외부와의 계약, 8주 차 결정 1)**: 받은 뒤 이 시간 안에 판정하지 못하면 처리하지 않는다.
  *           보내는 쪽은 이 약속이 있어야 "보낸 지 상한이 지났는데 조회하니 없음"을 "처리 안 됨"으로 믿고 출금을 취소할 수 있다.
  *           transfer의 해소 기준 시간(transfer.resolution.external-check-after)은 이 값 + 여유여야 한다
+ * @property lookupLiesNotFound 실험 스위치: 조회 계약 위반. 처리한 이체도 조회하면 "없음"이라고 답한다 (정산 파일엔 그대로 나옴).
+ *           외부가 기록을 잃었다가(결정 6) 정산 때 나타나는 장면을 재현한다 → 이중 지급 → 대사가 잡는지
  */
 @ConfigurationProperties("bank-mock")
 data class BankMockProperties(
@@ -23,6 +25,7 @@ data class BankMockProperties(
     val processingDelay: Duration = Duration.ZERO,
     val responseDelay: Duration = Duration.ZERO,
     val processingDeadline: Duration = Duration.ofSeconds(10),
+    val lookupLiesNotFound: Boolean = false,
 ) {
     init {
         require(rejectRatePercent in 0..100) { "bank-mock.reject-rate-percent는 0~100: $rejectRatePercent" }

@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class InterbankTransferServiceTest {
 
@@ -63,6 +64,30 @@ class InterbankTransferServiceTest {
         slept.clear()
         svc.transfer("t-1", "088", "1234567890", 10_000)
         assertEquals(emptyList(), slept)
+    }
+
+    @Test
+    fun `정산 파일 - 그날 판정한 것만 성공·거절 결과와 함께, 트레일러에 건수·합계`() {
+        val svc = service()
+        svc.transfer("t-ok", "088", "1234567890", 10_000)
+        svc.transfer("t-no", "088", "9990001", 5_000)
+        val today = java.time.LocalDate.now(SettlementFile.ZONE)
+
+        val lines = SettlementFile.write(today, svc.processedOn(today)).trimEnd().lines()
+
+        assertEquals("H|${today.toString().replace("-", "")}|BANKMOCK", lines.first())
+        assertTrue(lines.any { it.startsWith("D|t-ok|088|1234567890|10000|A||") })
+        assertTrue(lines.any { it.startsWith("D|t-no|088|9990001|5000|R|ACCOUNT_NOT_FOUND|") })
+        assertEquals("T|2|15000", lines.last())
+        assertTrue(svc.processedOn(today.minusDays(1)).isEmpty())
+    }
+
+    @Test
+    fun `조회 계약 위반 스위치 - 처리했는데 조회엔 없음, 정산 파일엔 나온다`() {
+        val svc = InterbankTransferService(BankMockProperties(lookupLiesNotFound = true), Random(42), sleeper = {})
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        assertNull(svc.find("t-1"))
+        assertEquals(1, svc.processedOn(java.time.LocalDate.now(SettlementFile.ZONE)).size)
     }
 
     @Test

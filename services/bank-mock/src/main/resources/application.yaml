@@ -43,6 +43,7 @@ bank-mock:
   processing-delay: 0s           # 받은 뒤 판정까지 지연 (실험 스위치). 처리 상한을 넘으면 처리하지 않음 → 조회하면 "없음"
   response-delay: 0s             # 판정·기록 뒤 응답 지연 (실험 스위치). transfer read-timeout(3s)보다 길면 "처리했는데 응답 못 받음"
   processing-deadline: 10s       # 처리 상한 = 외부와의 계약. transfer.resolution.external-check-after는 이 값 + 여유
+  lookup-lies-not-found: false   # 실험 스위치: 조회 계약 위반 (처리했는데 조회엔 "없음", 정산 파일엔 나옴) → 이중 지급 재현용
 
 server:
   shutdown: graceful
