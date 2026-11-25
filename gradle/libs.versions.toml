@@ -7,6 +7,7 @@ junit = "6.0.3"            # Spring Boot 4.1.2가 관리하는 버전과 맞춤 
 
 mockito-kotlin = "6.4.0"   # Spring Boot가 관리하지 않아서 직접 지정. Mockito를 Kotlin답게 (whenever, any(), doAnswer)
 redisson = "4.8.0"         # 2026-11-22 승인 (7주 차 Redis 분산 락). Boot가 관리하지 않음. 스타터 대신 코어만 (Boot 4 호환을 스타터에 기대지 않으려고)
+aws-sdk = "2.46.7"         # 2026-11-25 승인 (8주 차 대사 추출 파일, ADR-0006). S3 클라이언트. Garage(S3 호환)에 붙고, 진짜 S3로 옮겨도 코드가 그대로
 
 [libraries]
 spring-cloud-dependencies = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
@@ -15,6 +16,8 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
 redisson = { module = "org.redisson:redisson", version.ref = "redisson" }
+aws-sdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "aws-sdk" }   # SDK 모듈들의 버전을 한 번에 맞춘다
+aws-s3 = { module = "software.amazon.awssdk:s3" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

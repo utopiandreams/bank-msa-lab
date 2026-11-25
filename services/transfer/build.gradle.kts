@@ -11,6 +11,8 @@ group = "lab.bank"
 version = "0.0.1-SNAPSHOT"
 
 dependencies {
+	implementation(platform(libs.aws.sdk.bom))                                 // S3 클라이언트 (ADR-0006 대사 추출 파일, Garage). Garage는 경로 방식이라 forcePathStyle(true)
+	implementation(libs.aws.s3)
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")              // /actuator/prometheus (버전은 Boot가 관리)
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
