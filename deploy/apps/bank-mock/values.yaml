@@ -5,7 +5,7 @@ image:
   repository: ghcr.io/utopiandreams/bank-mock
   # CI(.github/workflows/services.yaml)가 빌드할 때마다 커밋 해시로 고쳐서 커밋한다. 손으로 고치지 않는다.
   # 첫 배포는 CI가 이 줄을 고칠 때까지 이미지가 없어 ImagePullBackOff → 태그 커밋 뒤 자동 회복
-  tag: "b874bf1979fc5aa2a0272f11891065fd6012876c"
+  tag: "30bebfd6576f83609dda03eac626cf1cb13137bf"
 
 # 외부 은행의 행동 = 실험 스위치의 **시작값** (BankMockProperties). 실행 중 변경은 재시작 없이 관리 포트로 (2026-11-26):
 #   kubectl -n bank port-forward deploy/bank-mock 18082:8081
