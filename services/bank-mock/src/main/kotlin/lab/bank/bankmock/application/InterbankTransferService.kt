@@ -4,18 +4,18 @@ import lab.bank.bankmock.domain.InterbankOutcome
 import lab.bank.bankmock.domain.InterbankTransfer
 import lab.bank.bankmock.domain.RejectReason
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
-import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
+import java.time.temporal.ChronoUnit
 import kotlin.random.Random
 
 /**
  * 외부 결제망 흉내: 받은 이체를 성공/거절로 판정하고, 같은 키는 처음 판정을 그대로 돌려준다.
  *
- * 저장은 메모리. 남의 은행이라 우리가 내구성을 책임질 대상이 아니다 (ADR-0004).
- * 한계: 재시작하면 기록이 사라져 같은 키가 "처음"으로, 조회가 "없음"으로 보인다.
- * 그러면 보내는 쪽이 성공한 이체를 취소할 수 있다 (이중 지급) → 가짜의 한계로 두고 대사가 잡는다 (설계 연습 08 2부 결정 6)
+ * 저장은 DB (2026-11-26, 전에는 메모리). 재시작해도 처리 기록·조회·정산 파일이 남는다.
+ * 메모리였을 때는 재시작하면 같은 키가 "처음"으로, 조회가 "없음"으로 보여 보내는 쪽이 성공한 이체를 취소할 수 있었고,
+ * 정산 파일에서도 빠져 대사가 거짓 불일치(MISSING_EXTERNAL)를 냈다. "외부가 기록을 잃는" 장면은 이제 lookupLiesNotFound 스위치로만 만든다
  *
  * 8주 차 계약 (설계 연습 08 2부 결정 1): **처리 상한 + 조회**.
  *   - 받은 뒤 처리 상한 안에 판정하지 못하면 처리하지 않는다 (기록 없음)
@@ -25,24 +25,24 @@ import kotlin.random.Random
  */
 @Service
 class InterbankTransferService(
-    private val properties: BankMockProperties,
+    private val store: InterbankTransferStore,
+    private val switches: BankMockSwitches,
     private val random: Random = Random.Default,
     private val sleeper: (Duration) -> Unit = { Thread.sleep(it) },
 ) {
-    private val transfers = ConcurrentHashMap<String, InterbankTransfer>()
 
     fun transfer(idempotencyKey: String, toBankCode: String, toAccountNumber: String, amount: Long): InterbankTransfer {
+        val settings = switches.current   // 요청 하나는 한 시점의 스위치로 끝까지 (중간에 바뀌어도 섞이지 않게)
+
         // 이미 판정한 키는 지연 없이 기록을 돌려준다 (재요청이 처리 상한에 걸려 "포기"로 보이면 안 된다: 이미 처리했으므로)
-        transfers[idempotencyKey]?.let { return checked(it, toBankCode, toAccountNumber, amount) }
+        store.find(idempotencyKey)?.let { return checked(it, toBankCode, toAccountNumber, amount) }
 
-        process(idempotencyKey)
+        process(idempotencyKey, settings)
 
-        // computeIfAbsent: 같은 키가 동시에 와도 판정은 한 번만 일어나고 둘 다 같은 결과를 받는다
-        val recorded = transfers.computeIfAbsent(idempotencyKey) {
-            judge(idempotencyKey, toBankCode, toAccountNumber, amount)
-        }
+        // 같은 키가 동시에 와서 둘 다 여기까지 왔어도 DB에 남는 판정은 하나 (PK + ON CONFLICT DO NOTHING), 둘 다 그 판정을 받는다
+        val recorded = store.saveIfAbsent(judge(idempotencyKey, toBankCode, toAccountNumber, amount, settings))
         // 기록한 뒤 응답이 늦는 경우: 외부는 처리했는데 보내는 쪽은 타임아웃 = 결과 불명의 가장 위험한 모양
-        if (!properties.responseDelay.isZero) sleeper(properties.responseDelay)
+        if (!settings.responseDelay.isZero && hit(settings.responseDelayPercent)) sleeper(settings.responseDelay)
         return checked(recorded, toBankCode, toAccountNumber, amount)
     }
 
@@ -52,23 +52,27 @@ class InterbankTransferService(
      * → 보내는 쪽 해소 일꾼이 출금을 취소해 이중 지급이 나고, 대사만 그걸 잡는다 (ADR-0006 판정표, 8주 차 재현)
      */
     fun find(idempotencyKey: String): InterbankTransfer? =
-        if (properties.lookupLiesNotFound) null else transfers[idempotencyKey]
+        if (switches.current.lookupLiesNotFound) null else store.find(idempotencyKey)
 
     /** 정산 파일용: 그날(Asia/Seoul) 판정한 전부 (성공·거절), 처리 시각 순 */
-    fun processedOn(date: LocalDate): List<InterbankTransfer> =
-        transfers.values
-            .filter { it.processedAt.atZone(SettlementFile.ZONE).toLocalDate() == date }
-            .sortedWith(compareBy({ it.processedAt }, { it.idempotencyKey }))
+    fun processedOn(date: LocalDate): List<InterbankTransfer> {
+        val from = date.atStartOfDay(SettlementFile.ZONE).toInstant()
+        return store.processedBetween(from, date.plusDays(1).atStartOfDay(SettlementFile.ZONE).toInstant())
+    }
 
     // 처리(판정 전) 지연. 상한을 넘으면 상한까지만 기다리고 포기한다: 실제 시스템도 상한에서 끊지, 끝까지 기다렸다 버리지 않는다
-    private fun process(idempotencyKey: String) {
-        val delay = properties.processingDelay
-        if (delay > properties.processingDeadline) {
-            sleeper(properties.processingDeadline)
-            throw ProcessingDeadlineExceededException(idempotencyKey, properties.processingDeadline)
+    private fun process(idempotencyKey: String, settings: BankMockProperties) {
+        val delay = settings.processingDelay
+        if (delay.isZero || !hit(settings.processingDelayPercent)) return
+        if (delay > settings.processingDeadline) {
+            sleeper(settings.processingDeadline)
+            throw ProcessingDeadlineExceededException(idempotencyKey, settings.processingDeadline)
         }
-        if (!delay.isZero) sleeper(delay)
+        sleeper(delay)
     }
+
+    // 비율 스위치: 100이면 무작위를 쓰지 않는다 (기존 동작·테스트의 난수 순서를 바꾸지 않게)
+    private fun hit(percent: Int): Boolean = percent >= 100 || (percent > 0 && random.nextInt(100) < percent)
 
     private fun checked(recorded: InterbankTransfer, toBankCode: String, toAccountNumber: String, amount: Long): InterbankTransfer {
         if (!recorded.sameRequestAs(toBankCode, toAccountNumber, amount)) {
@@ -77,10 +81,10 @@ class InterbankTransferService(
         return recorded
     }
 
-    private fun judge(key: String, toBankCode: String, toAccountNumber: String, amount: Long): InterbankTransfer {
+    private fun judge(key: String, toBankCode: String, toAccountNumber: String, amount: Long, settings: BankMockProperties): InterbankTransfer {
         val reason = when {
-            toAccountNumber.startsWith(properties.rejectAccountPrefix) -> RejectReason.ACCOUNT_NOT_FOUND
-            random.nextInt(100) < properties.rejectRatePercent -> RejectReason.RECEIVING_BANK_REJECTED
+            toAccountNumber.startsWith(settings.rejectAccountPrefix) -> RejectReason.ACCOUNT_NOT_FOUND
+            random.nextInt(100) < settings.rejectRatePercent -> RejectReason.RECEIVING_BANK_REJECTED
             else -> null
         }
         return InterbankTransfer(
@@ -90,7 +94,8 @@ class InterbankTransferService(
             amount = amount,
             outcome = if (reason == null) InterbankOutcome.ACCEPTED else InterbankOutcome.REJECTED,
             rejectReason = reason,
-            processedAt = Instant.now(),
+            // DB(timestamptz)는 마이크로초까지: 맞춰 두면 처음 응답과 재요청(DB에서 읽음)의 기록이 똑같다
+            processedAt = Instant.now().truncatedTo(ChronoUnit.MICROS),
         )
     }
 }

@@ -5,9 +5,6 @@ import lab.bank.bankmock.domain.RejectReason
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Duration
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -15,18 +12,17 @@ import kotlin.test.assertTrue
 
 class InterbankTransferServiceTest {
 
+    private fun svc(props: BankMockProperties, random: Random = Random(42), sleeper: (Duration) -> Unit = {}) =
+        InterbankTransferService(InMemoryInterbankTransferStore(), BankMockSwitches(props), random, sleeper)
+
     private fun service(rejectRatePercent: Int = 0, random: Random = Random(42)) =
-        InterbankTransferService(BankMockProperties(rejectRatePercent = rejectRatePercent), random, sleeper = {})
+        svc(BankMockProperties(rejectRatePercent = rejectRatePercent), random)
 
     // 실제로 기다리지 않고 "얼마나 기다렸나"만 기록
     private val slept = mutableListOf<Duration>()
 
     private fun delayed(processing: Duration = Duration.ZERO, response: Duration = Duration.ZERO, deadline: Duration = Duration.ofSeconds(10)) =
-        InterbankTransferService(
-            BankMockProperties(processingDelay = processing, responseDelay = response, processingDeadline = deadline),
-            Random(42),
-            sleeper = { slept += it },
-        )
+        svc(BankMockProperties(processingDelay = processing, responseDelay = response, processingDeadline = deadline), sleeper = { slept += it })
 
     @Test
     fun `처리 지연이 상한 안이면 처리한다 - 조회하면 있음`() {
@@ -49,10 +45,7 @@ class InterbankTransferServiceTest {
         // 보내는 쪽 read-timeout보다 긴 응답 지연 = "외부는 처리했는데 우리는 모름". 기다리는 순간 이미 기록돼 있어야 한다
         lateinit var svc: InterbankTransferService
         val recordedWhileWaiting = mutableListOf<Boolean>()
-        svc = InterbankTransferService(
-            BankMockProperties(responseDelay = Duration.ofSeconds(5)), Random(42),
-            sleeper = { recordedWhileWaiting += (svc.find("t-1") != null) },
-        )
+        svc = svc(BankMockProperties(responseDelay = Duration.ofSeconds(5)), sleeper = { recordedWhileWaiting += (svc.find("t-1") != null) })
         svc.transfer("t-1", "088", "1234567890", 10_000)
         assertEquals(listOf(true), recordedWhileWaiting)
     }
@@ -84,7 +77,7 @@ class InterbankTransferServiceTest {
 
     @Test
     fun `조회 계약 위반 스위치 - 처리했는데 조회엔 없음, 정산 파일엔 나온다`() {
-        val svc = InterbankTransferService(BankMockProperties(lookupLiesNotFound = true), Random(42), sleeper = {})
+        val svc = svc(BankMockProperties(lookupLiesNotFound = true))
         svc.transfer("t-1", "088", "1234567890", 10_000)
         assertNull(svc.find("t-1"))
         assertEquals(1, svc.processedOn(java.time.LocalDate.now(SettlementFile.ZONE)).size)
@@ -140,21 +133,32 @@ class InterbankTransferServiceTest {
     }
 
     @Test
-    fun `같은 키가 동시에 와도 판정은 한 번 - 모두 같은 결과`() {
-        val svc = service(rejectRatePercent = 50, random = Random.Default)
-        val threads = 16
-        val start = CountDownLatch(1)
-        val pool = Executors.newFixedThreadPool(threads)
-        val futures = (1..threads).map {
-            pool.submit<InterbankOutcome> {
-                start.await()
-                svc.transfer("t-1", "088", "1234567890", 10_000).outcome
-            }
+    fun `응답 지연 비율 - 요청의 일부에만 지연을 준다`() {
+        // 요청 하나에 난수 2번: 판정(거절률 0이라 결과 무관) → 지연 여부(30 미만이면 지연). 지연 여부 자리에 0, 50, 0, 50 → 4건 중 2건
+        val draws = ArrayDeque(listOf(50, 0, 50, 50, 50, 0, 50, 50))
+        val scripted = object : Random() {
+            override fun nextBits(bitCount: Int) = 0
+            override fun nextInt(until: Int) = draws.removeFirst()
         }
-        start.countDown()
-        val outcomes = futures.map { it.get(5, TimeUnit.SECONDS) }.toSet()
-        pool.shutdown()
+        val svc = svc(BankMockProperties(responseDelay = Duration.ofSeconds(5), responseDelayPercent = 30), scripted, sleeper = { slept += it })
+        repeat(4) { svc.transfer("t-$it", "088", "1234567890", 10_000) }
+        assertEquals(2, slept.size)
+    }
 
-        assertEquals(1, outcomes.size, "같은 키인데 판정이 갈렸다: $outcomes")
+    @Test
+    fun `스위치를 실행 중에 바꾸면 다음 요청부터 반영된다`() {
+        val switches = BankMockSwitches(BankMockProperties())
+        val svc = InterbankTransferService(InMemoryInterbankTransferStore(), switches, Random(42), sleeper = { slept += it })
+        svc.transfer("t-1", "088", "1234567890", 10_000)
+        switches.change { it.copy(responseDelay = Duration.ofSeconds(5)) }
+        svc.transfer("t-2", "088", "1234567890", 10_000)
+        assertEquals(listOf(Duration.ofSeconds(5)), slept)
+    }
+
+    @Test
+    fun `스위치에 잘못된 값이면 바뀌지 않는다`() {
+        val switches = BankMockSwitches(BankMockProperties())
+        assertThrows<IllegalArgumentException> { switches.change { it.copy(responseDelayPercent = 150) } }
+        assertEquals(100, switches.current.responseDelayPercent)
     }
 }

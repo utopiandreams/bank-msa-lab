@@ -1,6 +1,11 @@
 spring:
   application:
     name: bank-mock
+  flyway:
+    # transfer·reconciliation과 같은 이유: 계정 이름 = 스키마 이름(bankmock)이면 search_path("$user", public) 때문에
+    # 두 번째 기동부터 기록 테이블을 못 찾는다 (2026-11-14 transfer CrashLoopBackOff). 기록 테이블 위치를 public으로 고정
+    default-schema: public
+  # 접속 정보(spring.datasource.*)는 여기 쓰지 않는다: 클러스터는 CloudNativePG Secret → 환경변수, 테스트는 @ServiceConnection
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -13,7 +18,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, prometheus
+        include: health, info, prometheus, experiments   # experiments: 실험 스위치 (api/ExperimentsEndpoint, 재시작 없이)
   endpoint:
     health:
       probes:
@@ -36,12 +41,14 @@ management:
         spring.kafka.template: true          # Kafka 발행 (Outbox 릴레이)
         tasks.scheduled.execution: true      # @Scheduled (릴레이 · 결과 불명 해소)
 
-# 외부 은행의 행동 (BankMockProperties). 클러스터에서는 환경변수 BANK_MOCK_REJECT_RATE_PERCENT 등으로 바꾼다
+# 외부 은행의 행동 (BankMockProperties) = 시작값. 실행 중엔 POST :8081/actuator/experiments 로 바꾼다 (재시작하면 여기 값으로)
 bank-mock:
   reject-account-prefix: "999"   # 받는 계좌가 이걸로 시작하면 "계좌 없음" 거절
   reject-rate-percent: 0         # 그 밖의 요청을 이 확률로 거절 (실험 스위치)
   processing-delay: 0s           # 받은 뒤 판정까지 지연 (실험 스위치). 처리 상한을 넘으면 처리하지 않음 → 조회하면 "없음"
   response-delay: 0s             # 판정·기록 뒤 응답 지연 (실험 스위치). transfer read-timeout(3s)보다 길면 "처리했는데 응답 못 받음"
+  processing-delay-percent: 100  # 처리 지연을 요청의 몇 %에만 (평소 트래픽에 "가끔 늦는 외부" 섞기)
+  response-delay-percent: 100    # 응답 지연을 요청의 몇 %에만
   processing-deadline: 10s       # 처리 상한 = 외부와의 계약. transfer.resolution.external-check-after는 이 값 + 여유
   lookup-lies-not-found: false   # 실험 스위치: 조회 계약 위반 (처리했는데 조회엔 "없음", 정산 파일엔 나옴) → 이중 지급 재현용
 
