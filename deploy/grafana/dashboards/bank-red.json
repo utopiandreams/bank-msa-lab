@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "graphTooltip": 1,
   "refresh": "10s",
@@ -1907,6 +1907,124 @@
       }
     },
     {
+      "type": "timeseries",
+      "id": 32,
+      "title": "Outbox 미발행 행 수",
+      "description": "아직 Kafka로 안 나간 송금 이벤트. 평소 0~몇 건.\nKafka 브로커가 죽으면 송금은 계속 되고 여기만 계단처럼 오른다 → 복구되면 뚝 떨어진다 (6주 차 Outbox의 존재 이유가 보이는 그래프).\n파드마다 같은 테이블을 보므로 max.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(transfer_outbox_unpublished)",
+          "legendFormat": "미발행",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 33,
+      "title": "Outbox 가장 오래 기다린 이벤트",
+      "description": "가장 오래된 미발행 행의 나이. 평소 1초 안팎(릴레이 폴링 간격).\n행 수보다 이게 경보에 맞다: 송금이 드문 새벽엔 행이 1건이어도 \"10분째 안 나감\"이면 장애.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(transfer_outbox_oldest_unpublished_age_seconds)",
+          "legendFormat": "가장 오래된 미발행",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "type": "row",
       "id": 30,
       "title": "⑥ 왜? — 자원(USE)은 다른 대시보드에서",
@@ -1915,7 +2033,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 74
       },
       "panels": []
     },
@@ -1927,7 +2045,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 75
       },
       "options": {
         "mode": "markdown",
