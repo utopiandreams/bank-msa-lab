@@ -16,3 +16,18 @@ spec:
   replicas: 1
   config:
     retention.ms: 604800000   # 7일. 그 안이면 오프셋을 되돌려 다시 읽을 수 있다 (장애 후 재처리)
+---
+# reconciliation-extracts: 일자별 대사 추출 파일을 다 올렸다는 알림 (ADR-0006). transfer·core가 발행, reconciliation이 구독(인박스)
+#   - 하루에 출처당 한두 건이라 파티션 1: 순서·병렬이 필요 없다. 키 = "<출처>:<날짜>"
+#   - 보관 30일: 대사 서비스가 오래 멈췄다 살아나도 놓친 알림을 다시 읽을 수 있게 (파일 자체는 저장소에 남는다)
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: reconciliation-extracts
+  labels:
+    strimzi.io/cluster: bank-kafka
+spec:
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: 2592000000   # 30일
