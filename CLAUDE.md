@@ -96,7 +96,7 @@
 
 ## 5. 로드맵과 현재 진행 상황
 
-**현재: Phase 3 / 9주 차** (8주 차 완료 2026-11-25. 노드 확장·컨트롤 플레인 HA는 진행 중, 백로그) ← 주차가 끝날 때마다 이 줄을 갱신한다.
+**현재: Phase 3 / 11주 차** (9·10주 차 완료 2026-11-26. 노드 확장·컨트롤 플레인 HA는 진행 중, 백로그) ← 주차가 끝날 때마다 이 줄을 갱신한다.
 
 > 2026-11-11 변경: 1주 차에 인프라 구축을 넣고 이후 일정을 1주씩 미뤘다 (총 19주 → 2026-11-12 3주 차를 2주로 늘려 총 20주). 이유: 이후 모든 단계가 클러스터를 전제로 하고, 온프레미스 k8s는 불확실성이 가장 커서 먼저 해소한다.
 
@@ -182,18 +182,18 @@
 
 ### Phase 3. 관측성 (9~11주)
 > 2026-11-24 개발자 결정: **배관(설치·연결·문맥 전파·대시보드·알림 규칙)은 Claude가 설계 퀴즈 없이 빠르게** 하고, 개발자의 시간은 **실무에서 모니터링을 어떻게 쓰나**(상황 → 신호 → 클릭 경로 → 판단)에 쓴다. 활용법은 `docs/learning/monitoring-playbook.md`에 장면마다 쌓는다. 주차마다 판독 연습(장애를 걸고 플레이북 순서대로)을 하나 이상 넣는다.
-- [ ] 9주: OpenTelemetry로 gateway → 서비스 → Kafka → 컨슈머까지 하나의 트레이스로 연결 (Tempo)
+- [x] 9주: OpenTelemetry로 gateway → 서비스 → Kafka → 컨슈머까지 하나의 트레이스로 연결 (Tempo)
   - [x] 설치 (2026-11-23): Tempo · OTel Collector(잡음 필터) · 에이전트(공통 차트 init 컨테이너), Grafana 데이터 소스 (`docs/infra/README.md` 트레이싱)
   - [x] Outbox 잇기 (2026-11-24): 행에 `traceparent`(V7), 릴레이가 행마다 요청의 자식 구간 → 송금 한 건 = gateway부터 notification까지 한 트레이스 (pitfalls 39)
   - [x] 잡음 정리 (2026-11-24): Collector 꼬리 기반 샘플링으로 릴레이 회차 트레이스(1초마다) 통째로 버림
-  - [ ] 남음: 판독 연습 1회 (bank-mock 지연 → 느린 송금 트레이스 읽기, 플레이북 1-1). 로그에 traceId는 10주 차 Loki와 함께로 이동
-- [ ] 10주: Prometheus·Loki·Grafana로 RED 지표, 컨슈머 랙, JVM 대시보드, 로그 ↔ 트레이스 연결
+  - [x] 판독 연습 1회 (2026-11-26, 10주 차와 같이): bank-mock 간헐 지연 → RED → 트레이스 → 로그 → 송금 ID, 관측 공백(해소 로그) 발견·수정 (`monitoring-playbook.md` 5절)
+- [x] 10주: Prometheus·Loki·Grafana로 RED 지표, 컨슈머 랙, JVM 대시보드, 로그 ↔ 트레이스 연결
   - 2026-11-18 결정: **기본 스택만 앞당긴다** (노드 확장 전에). `kube-prometheus-stack`(Prometheus·Grafana, 노드·쿠버네티스 기본 대시보드) + Strimzi·CloudNativePG 대시보드 + etcd 지표 + 앱 지표(`micrometer-registry-prometheus`, 2026-11-18 승인: JVM·API별 지연·커넥션 풀). 이유: 노드 확장·호스트 다운·k6 기준선을 그래프로 보면서 하려고, 같은 대시보드를 일찍부터 반복해 봐야 평소 모양이 눈에 익는다. 서비스별 RED 대시보드 설계, Loki·Tempo, SLO·알림은 10~11주 차 그대로
   - 2026-11-25 결정: **RED 대시보드는 8주 차와 병렬**로 지금, **Loki·로그 traceId는 8주 차 뒤 트레이싱 판독 연습 직전**에
   - [x] 서비스 RED 대시보드 `deploy/grafana/dashboards/bank-red.json` (2026-11-25, Claude가 만들고 개발자와 같이 읽는 연습): 입구 숫자 → 서비스 비교 → 서비스 상세 → 의존성(부르는 쪽 vs 받는 쪽) → 비동기(발행·소비·스케줄러) → 자원 링크. 에러율은 5xx만, 4xx는 따로. 함께 고친 것: transfer RestClient에 지표가 없던 것(`observationRegistry`), 발행·소비·스케줄러·라우트 히스토그램
   - [x] 로그 (2026-11-25, 판독 연습 전에 앞당김): Loki(Monolithic) + Alloy(노드마다, 파드 로그 파일 수집), 로그 줄마다 `trace_id`(에이전트 MDC → Boot 상관관계 패턴), Grafana 로그 ↔ 트레이스 클릭 이동. **trace_id 구조화 메타데이터 추출은 필터 수정 후 확인 남음**
   - [x] 덤 (2026-11-25): Tempo 서비스 그래프(트레이스 → 서비스 지도, 13주 차 토폴로지 재료), Redis exporter · Garage 지표, Outbox 적체 지표(6주 차 남은 것) + 대시보드 패널
-  - [ ] 대시보드 같이 읽기 연습 (판독 연습과 함께, 뒤로 미룸)
+  - [x] 대시보드 같이 읽기 연습 (2026-11-26, 판독 연습 1). 남은 손질: ④ 호출 결과 패널(실패만, 호출 서비스 드롭다운)
 - [ ] 11주: 송금 성공률·p99 SLO 정의, Alertmanager 알림
   - [x] 배관 앞당김 (2026-11-25): Alertmanager 켬(받는 곳 null), RED 기록 규칙(`red-rules.yaml`). 공부 자료 `docs/learning/alerting.md` (지표 코드 → 규칙 → 라우팅 → 화면)
   - [ ] 알림 채널: **Telegram**(개발자 선호, 연동은 나중에). critical 방 / warning 방 분리, Watchdog은 Healthchecks.io 검토
