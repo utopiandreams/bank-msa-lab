@@ -94,7 +94,7 @@ spec:
                 // 우리 Spring 서비스: 예외 스택 트레이스는 여러 줄이다 → 날짜로 시작하지 않는 줄은 앞 줄에 붙인다 (안 그러면 한 예외가 수십 줄로 흩어진다)
                 // + trace_id를 꺼내 "구조화 메타데이터"로 (라벨로 두면 요청마다 새 스트림 = 카디널리티 폭발)
                 stage.match {
-                  selector = "{namespace=\"bank\", container=~\"gateway|core|transfer|notification|bank-mock|reconciliation\"}"
+                  selector = "{namespace=\"bank\", app=~\"gateway|core|transfer|notification|bank-mock|reconciliation\"}"   // 컨테이너 이름은 전부 app(공통 차트)이라 app 라벨로 고른다
                   stage.multiline {
                     firstline     = "^\\d{4}-\\d{2}-\\d{2}T"
                     max_wait_time = "3s"
@@ -105,6 +105,11 @@ spec:
                   stage.structured_metadata {
                     values = { trace_id = "" }
                   }
+                }
+
+                // loki.source.file이 자동으로 붙이는 filename 라벨(파드가 재시작할 때마다 새 값)은 버린다: pod·container로 충분하고 스트림만 늘린다
+                stage.label_drop {
+                  values = ["filename"]
                 }
 
                 forward_to = [loki.write.default.receiver]
