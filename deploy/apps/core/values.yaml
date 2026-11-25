@@ -9,11 +9,17 @@ image:
 # DB 접속: CloudNativePG가 만든 Secret core-db-app에서 꺼낸다 (deploy/platform/core-db)
 # Spring은 SPRING_DATASOURCE_URL 같은 환경변수를 spring.datasource.url로 읽는다 (relaxed binding)
 env:
+  # 대사 추출 파일 저장소 (Garage, ADR-0006)
+  STORAGE_ENDPOINT: http://garage:3900
+  STORAGE_REGION: garage
+  STORAGE_BUCKET: daily-extracts
   SPRING_DATASOURCE_URL: jdbc:postgresql://core-db-rw:5432/core
   CORE_REDIS_ADDRESS: redis://redis:6379   # REDIS 락 전략 (deploy/platform/redis). 처음 쓸 때 붙으므로 Redis가 없어도 core는 뜬다
 secretEnv:
   SPRING_DATASOURCE_USERNAME: { secret: core-db-app, key: username }
   SPRING_DATASOURCE_PASSWORD: { secret: core-db-app, key: password }
+  STORAGE_ACCESS_KEY_ID: { secret: garage-secrets, key: access-key-id }
+  STORAGE_SECRET_ACCESS_KEY: { secret: garage-secrets, key: secret-access-key }
 
 # 외부에 열지 않는다: 클러스터 밖 요청은 gateway만 받는다 (ADR-0002 결정 4, G-3)
 # 직접 확인이 필요하면: kubectl -n bank port-forward svc/core 8080:80
