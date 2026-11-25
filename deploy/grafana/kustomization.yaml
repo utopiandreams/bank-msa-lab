@@ -9,6 +9,7 @@
 #   strimzi-kafka-exporter             Strimzi 1.3.1 examples/metrics/grafana-dashboards (컨슈머 랙)
 #   cnpg-cluster                       cloudnative-pg/grafana-dashboards 태그 cluster-v0.0.5 (${DS_EXPRESSION} → __expr__)
 #   jvm-micrometer                     grafana.com 4701 "JVM (Micrometer)" rev 10 (__inputs → datasource 변수)
+#   bank-red                           직접 작성 (2026-11-25, 10주 차 서비스 RED). 생성 스크립트 없이 JSON이 기준
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: monitoring
@@ -29,3 +30,5 @@ configMapGenerator:
     files: [dashboards/cnpg-cluster.json]
   - name: dashboard-jvm-micrometer
     files: [dashboards/jvm-micrometer.json]
+  - name: dashboard-bank-red
+    files: [dashboards/bank-red.json]
