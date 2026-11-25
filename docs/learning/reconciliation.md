@@ -56,3 +56,24 @@
 
 - 💡 독립성과 결합의 줄다리기: 서비스 코드를 덜 거칠수록(④·CDC) 독립적이지만 스키마에 묶이고, API(①)는 경계를 지키지만 서비스 코드의 버그를 같이 볼 수 있다
 - 🎤 "MSA에서 여러 서비스 데이터를 대사하려면?" → 방법 넷과 트레이드오프, 이 프로젝트의 선택과 이유
+
+## 8. 추출 함수가 100만 건을 한 번에 불러와도 되나? (2026-11-25, 개발자가 `DailyExtractUseCaseImpl.extract`를 읽다가)
+
+- 💡 **지금 코드로는 안 된다.** 하루 수천 건을 전제로 "전부 메모리에 올리는" 모양이다. 100만 건이면 같은 데이터가 메모리에 여러 벌 겹친다 (대략치):
+
+| 단계 | 메모리에 있는 것 | 100만 건 대략 |
+| --- | --- | --- |
+| JDBC 결과 | PostgreSQL 드라이버는 기본으로 **결과 전체를 받아 둔다** (fetchSize·커서를 안 쓰면) | 수백 MB |
+| `List<TransferExtractRow>` | 객체 100만 개 (UUID·Instant 2개·String들, 한 줄 250~350B) | 250~350MB |
+| `TransferExtractCsv.write` | 파일 전체를 String 하나로 (StringBuilder가 커질 때마다 두 배로 다시 잡음) | 150~300MB |
+| `toByteArray` | 같은 내용을 바이트로 한 벌 더 | 약 150MB |
+
+  → 겹치는 순간 1GB 가까이. transfer 파드 메모리 limit이 **640Mi**(공통 차트)라 **OOMKilled**. 대사 서비스도 `getObjectAsBytes`(파일 통째) → 파싱 리스트 → 판정 맵으로 같은 문제
+- 💡 **실무 방식 = 흘려 쓰기(streaming), 메모리를 건수와 무관하게:**
+  1. DB: 커서로 조금씩 (JDBC `fetchSize` + 트랜잭션 안, 또는 `JdbcClient`의 `stream()`)
+  2. 한 줄 읽을 때마다 CSV 한 줄을 **파일(임시 파일)이나 업로드 스트림에 바로** 쓰고, 건수·합계·SHA-256(`DigestOutputStream`)도 그때그때 누적
+  3. 큰 파일은 S3 **멀티파트 업로드**(조각 단위로 올림) 또는 임시 파일을 올림
+  4. 받는 쪽은 내려받으면서 스테이징에 `COPY` → SQL로 비교 (결정 22의 "100만 건이면")
+- 💡 그 밖에 따라오는 것: 한 쿼리가 오래 열려 있으면 그동안 DB 스냅숏을 쥔다(긴 트랜잭션, concurrency 8절 ⑥) → 읽기 복제본에서 뽑기도 한다. 하루치를 시간대로 나눠 여러 번 뽑기도 한다
+- 🎤 "하루 100만 건을 파일로 뽑는 배치를 어떻게 짜나요?" → 커서로 읽고 줄마다 바로 쓰기, 체크섬·건수는 흘리면서 누적, 멀티파트 업로드, 메모리는 건수와 무관. "왜 `findAll()` 후 `joinToString`이면 안 되나" → 메모리에 여러 벌 + 드라이버가 결과를 다 받아 둠
+- 📎 `services/transfer/.../application/DailyExtractUseCaseImpl.kt`, `JdbcTransferExtractSource.kt`(주석에 "수십만 건이면 커서로 흘려 쓴다"만 적혀 있음), `services/core/.../extract/application/CoreDailyExtractService.kt`
