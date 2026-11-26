@@ -1,5 +1,8 @@
 package lab.bank.bankmock.application
 
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Metrics
 import lab.bank.bankmock.domain.InterbankOutcome
 import lab.bank.bankmock.domain.InterbankTransfer
 import lab.bank.bankmock.domain.RejectReason
@@ -22,6 +25,10 @@ import kotlin.random.Random
  *   - 조회는 있다(성공·거절)/없다만 답한다. "처리 중"은 없다: 보내는 쪽이 상한이 지난 뒤에만 묻기로 약속했기 때문
  *
  * @param sleeper 지연을 흉내 내는 함수. 테스트에서 실제로 기다리지 않고 호출만 기록하려고 바꿔 끼운다
+ * @param meters 지표 (2026-11-26, "은행 운영" 대시보드). 스프링에선 앱의 레지스트리가 주입되고, 테스트에선 기본값(전역, 아무 데도 안 나감)
+ *   bankmock_interbank_judged_total{outcome,reason}   새로 판정한 이체 (같은 키 재요청은 안 셈)
+ *   bankmock_interbank_deadline_exceeded_total        처리 상한을 넘겨 포기한 이체 (기록 없음 → 보내는 쪽은 결과 불명)
+ *   bankmock_interbank_response_delayed_total         기록한 뒤 응답을 늦춘 이체 (보내는 쪽 타임아웃이면 "처리됐는데 모름")
  */
 @Service
 class InterbankTransferService(
@@ -29,7 +36,18 @@ class InterbankTransferService(
     private val switches: BankMockSwitches,
     private val random: Random = Random.Default,
     private val sleeper: (Duration) -> Unit = { Thread.sleep(it) },
+    private val meters: MeterRegistry = Metrics.globalRegistry,
 ) {
+    private val deadlineExceeded = Counter.builder("bankmock.interbank.deadline.exceeded")
+        .description("처리 상한을 넘겨 포기한 이체 (기록 없음)").register(meters)
+    private val responseDelayed = Counter.builder("bankmock.interbank.response.delayed")
+        .description("기록한 뒤 응답을 늦춘 이체").register(meters)
+
+    init {
+        // 조합을 미리 0으로 (처음 생기는 순간의 증가가 rate()에 안 잡히는 함정, pitfalls 41)
+        judgedCounter(InterbankOutcome.ACCEPTED, null)
+        RejectReason.entries.forEach { judgedCounter(InterbankOutcome.REJECTED, it) }
+    }
 
     fun transfer(idempotencyKey: String, toBankCode: String, toAccountNumber: String, amount: Long): InterbankTransfer {
         val settings = switches.current   // 요청 하나는 한 시점의 스위치로 끝까지 (중간에 바뀌어도 섞이지 않게)
@@ -40,9 +58,14 @@ class InterbankTransferService(
         process(idempotencyKey, settings)
 
         // 같은 키가 동시에 와서 둘 다 여기까지 왔어도 DB에 남는 판정은 하나 (PK + ON CONFLICT DO NOTHING), 둘 다 그 판정을 받는다
-        val recorded = store.saveIfAbsent(judge(idempotencyKey, toBankCode, toAccountNumber, amount, settings))
+        val judged = judge(idempotencyKey, toBankCode, toAccountNumber, amount, settings)
+        val recorded = store.saveIfAbsent(judged)
+        if (recorded == judged) judgedCounter(judged.outcome, judged.rejectReason).increment()   // 동시 요청에 진 쪽은 안 센다
         // 기록한 뒤 응답이 늦는 경우: 외부는 처리했는데 보내는 쪽은 타임아웃 = 결과 불명의 가장 위험한 모양
-        if (!settings.responseDelay.isZero && hit(settings.responseDelayPercent)) sleeper(settings.responseDelay)
+        if (!settings.responseDelay.isZero && hit(settings.responseDelayPercent)) {
+            responseDelayed.increment()
+            sleeper(settings.responseDelay)
+        }
         return checked(recorded, toBankCode, toAccountNumber, amount)
     }
 
@@ -66,10 +89,17 @@ class InterbankTransferService(
         if (delay.isZero || !hit(settings.processingDelayPercent)) return
         if (delay > settings.processingDeadline) {
             sleeper(settings.processingDeadline)
+            deadlineExceeded.increment()
             throw ProcessingDeadlineExceededException(idempotencyKey, settings.processingDeadline)
         }
         sleeper(delay)
     }
+
+    private fun judgedCounter(outcome: InterbankOutcome, reason: RejectReason?): Counter =
+        Counter.builder("bankmock.interbank.judged")
+            .description("새로 판정한 이체 (같은 키 재요청 제외)")
+            .tags("outcome", outcome.name, "reason", reason?.name ?: "none")
+            .register(meters)
 
     // 비율 스위치: 100이면 무작위를 쓰지 않는다 (기존 동작·테스트의 난수 순서를 바꾸지 않게)
     private fun hit(percent: Int): Boolean = percent >= 100 || (percent > 0 && random.nextInt(100) < percent)
