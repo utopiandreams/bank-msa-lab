@@ -19,6 +19,16 @@ secretEnv:
   STORAGE_ACCESS_KEY_ID: { secret: garage-secrets, key: access-key-id }
   STORAGE_SECRET_ACCESS_KEY: { secret: garage-secrets, key: secret-access-key }
 
+# 2026-11-26: 공통 640Mi → 1Gi (transfer만). 평소에도 컨테이너 메모리가 597Mi(한도의 93%)에 붙어 부하 없이도 요청이 2~12초 걸렸고
+# (한도 근처에서 커널이 실행 코드·jar 페이지 캐시를 쫓아냄 → 다시 읽느라 멈춤으로 추정), 150건/초에서 스레드가 200개로 늘자 OOMKilled.
+# 근본 원인(커넥션 풀 한계 초당 약 65건, 힙 밖·지표에 안 잡히는 메모리 약 200Mi)은 따로 본다. 힙은 MaxRAMPercentage=75라 768Mi까지
+resources:
+  requests:
+    cpu: 100m
+    memory: 1Gi
+  limits:
+    memory: 1Gi
+
 # 외부에 열지 않는다: 클러스터 밖 요청은 gateway만 받는다 (ADR-0002 결정 4, G-3)
 # 직접 확인이 필요하면: kubectl -n bank port-forward svc/transfer 8080:80
 ingress:
