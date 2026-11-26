@@ -542,6 +542,20 @@
 
 ---
 
+## 2026-11-26 (오후) · 은행 운영 대시보드 + DataGrip 연결
+
+**한 일**
+- 계기 (개발자): "DB에 붙을 수도 없고 대시보드도 없는데 뭘 확인하라는 거냐", "불명 상태로 표류 중인 게 몇 개고 오래된 건 몇 개인지도 있어야지"
+- 지표: transfer `transfer_unresolved{kind,status,age}`·`transfer_unresolved_oldest_age_seconds`(해소용 부분 인덱스만 훑는 쿼리, 15초마다), `transfer_finished_total`(Outbox 발행기, 커밋 뒤), `transfer_resolution_total`(해소 일꾼 결과) / bank-mock 판정·처리 상한 초과·응답 지연 카운터 + 현재 스위치 게이지. 조합은 0으로 미리 등록 (pitfalls 41)
+- "Bank · 은행 운영" 대시보드 (`bank-ops.json`): 지금 상태 → 끝나지 않은 송금(나이 구간·상태·가장 오래된 나이·해소 결과) → 결과 흐름 → 외부 은행 → 대사. 송금 ID는 패널 안내대로 Loki·DataGrip
+- `infra/scripts/db-forward.sh`: DB 5개를 localhost 15432~15436으로 port-forward + 접속 정보 출력 (DataGrip은 Read-only로)
+- 클러스터 확인: 새 지표 전부 수집됨 (끝난 송금 256, bank-mock 스위치 값 = 운영 모드 시작값). 지금 끝나지 않은 송금 0건
+
+**발견**
+- 첫 실데이터 대사 (11-25분): transfer ↔ core 391건 전부 일치·시산표 정상. transfer ↔ 외부는 `MISSING_EXTERNAL` 12건 이월 = 11-25 18:55 KST 송금들(COMPLETED 8 · CANCELLED 4), bank-mock이 메모리 저장이던 때 처리해 DB 전환 때 기록이 사라짐 → 내일 01:00 회차에 경보로 바뀐다 (처리 방법은 개발자 결정 대기)
+
+---
+
 ## 이력서 소재 (계속 갱신)
 
 > 아직 "결과 수치"가 있는 실험은 없다. Phase 2(6~8주 차)부터 재현 → 해결 → 전후 수치가 쌓인다.
