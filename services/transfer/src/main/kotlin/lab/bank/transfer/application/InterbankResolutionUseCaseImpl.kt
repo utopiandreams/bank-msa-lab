@@ -1,6 +1,7 @@
 package lab.bank.transfer.application
 
 import lab.bank.transfer.application.port.out.InterbankTransferRepository
+import lab.bank.transfer.domain.InterbankTransferStatus
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -28,27 +29,33 @@ class InterbankResolutionUseCaseImpl(
     private val repository: InterbankTransferRepository,
     private val resolver: InterbankTransferResolver,
     private val properties: ResolutionProperties,
+    private val metrics: ResolutionMetrics,
 ) : InterbankResolutionUseCase {
 
     override fun resolveStuck(): Int {
         var resolved = 0
         repeat(properties.batchSize) {
-            when (resolveOne()) {
-                Outcome.NOTHING_TO_DO, Outcome.STILL_STUCK -> return resolved
-                Outcome.RESOLVED -> resolved++
+            // 건마다 커밋된 뒤라 바로 센다
+            val after = resolveOne() ?: return resolved
+            if (!after.isFinal()) {
+                metrics.stillStuck(ResolutionMetrics.INTERBANK)
+                return resolved
             }
+            metrics.resolved(ResolutionMetrics.INTERBANK, after.name)
+            resolved++
         }
         return resolved
     }
 
-    private fun resolveOne(): Outcome =
+    /** 잡은 송금의 해소 뒤 상태 (끝 상태가 아니면 못 풂), 잡을 게 없으면 null */
+    private fun resolveOne(): InterbankTransferStatus? =
         transactionTemplate.execute {
             val now = Instant.now()
             val transfer = repository.findStuckForUpdate(
                 coreSentBefore = now.minus(properties.checkAfter),
                 externalSentBefore = now.minus(properties.externalCheckAfter),
                 limit = 1,
-            ).firstOrNull() ?: return@execute Outcome.NOTHING_TO_DO
+            ).firstOrNull() ?: return@execute null
 
             // 상태는 값으로 떠 둔다: resolve가 같은 객체를 바꾸므로 나중에 transfer.status를 읽으면 이미 바뀐 값이다
             val before = transfer.status
@@ -56,14 +63,11 @@ class InterbankResolutionUseCaseImpl(
             // 송금마다 한 줄 (2026-11-26 판독 연습에서 발견: "N건 확정"만 있어 송금 ID로 일생을 따라갈 수 없었다)
             if (after.status.isFinal()) {
                 log.info("타행 해소: transferId={} {} → {} failureCode={}", transfer.id, before, after.status, after.failureCode)
-                Outcome.RESOLVED
             } else {
                 log.warn("타행 해소 못 함 (다음 회차에 다시): transferId={} {} → {}", transfer.id, before, after.status)
-                Outcome.STILL_STUCK
             }
-        } ?: Outcome.NOTHING_TO_DO
-
-    private enum class Outcome { NOTHING_TO_DO, RESOLVED, STILL_STUCK }
+            after.status
+        }
 
     companion object {
         private val log = LoggerFactory.getLogger(InterbankResolutionUseCaseImpl::class.java)

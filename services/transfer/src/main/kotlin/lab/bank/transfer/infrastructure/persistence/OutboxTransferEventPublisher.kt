@@ -1,5 +1,7 @@
 package lab.bank.transfer.infrastructure.persistence
 
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.MeterRegistry
 import lab.bank.common.event.TransferFinishedEvent
 import lab.bank.transfer.application.port.out.TransferEventPublisher
 import lab.bank.transfer.domain.InterbankTransfer
@@ -8,6 +10,8 @@ import lab.bank.transfer.domain.OutboxEvent
 import lab.bank.transfer.domain.Transfer
 import lab.bank.transfer.infrastructure.tracing.TraceParents
 import org.springframework.stereotype.Component
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
 import java.util.UUID
@@ -17,12 +21,24 @@ import java.util.UUID
  * 실제 전송은 릴레이가 커밋 뒤에 한다. 포트 계약(예외를 삼키지 않는다)은 TransferEventPublisher 주석.
  *
  * 이 클래스 자체가 "발행 포트의 영속성 어댑터"라 JPA 리포지토리를 직접 쓴다 (어댑터가 다른 아웃바운드 포트를 거치지 않는다).
+ *
+ * 지표 transfer_finished_total{kind,status} (2026-11-26, "은행 운영" 대시보드): 끝 상태로 바뀐 송금 수.
+ * 끝 상태로 바뀌는 곳이 여러 군데(접수·고객 재요청·해소 일꾼, 당행·타행)지만 전부 여기를 지나므로 한 곳에서 센다.
+ * **커밋된 뒤에만** 올린다: 트랜잭션이 롤백되면 송금도 끝나지 않았으므로. 조합은 시작할 때 0으로 만들어 둔다
+ * (처음 생기는 순간의 증가가 rate()에 안 잡히는 함정, pitfalls 41)
  */
 @Component
 class OutboxTransferEventPublisher(
     private val outboxJpaRepository: OutboxJpaRepository,
     private val jsonMapper: JsonMapper,
+    private val registry: MeterRegistry,
     ): TransferEventPublisher {
+
+    init {
+        listOf("DOMESTIC" to "COMPLETED", "DOMESTIC" to "FAILED",
+               "INTERBANK" to "COMPLETED", "INTERBANK" to "FAILED", "INTERBANK" to "CANCELLED")
+            .forEach { (kind, status) -> finishedCounter(kind, status) }
+    }
 
     override fun publishFinished(transfer: Transfer) {
         val eventId = UUID.randomUUID()
@@ -40,6 +56,7 @@ class OutboxTransferEventPublisher(
                 failureCode = transfer.failureCode,
             )
         )
+        countAfterCommit("DOMESTIC", transfer.status.name)
         outboxJpaRepository.save(
             OutboxEventMapper.toEntity(
                 OutboxEvent.create(
@@ -73,6 +90,7 @@ class OutboxTransferEventPublisher(
                 toAccountNumber = transfer.toAccountId,
             )
         )
+        countAfterCommit("INTERBANK", transfer.status.name)
         outboxJpaRepository.save(
             OutboxEventMapper.toEntity(
                 OutboxEvent.create(
@@ -86,6 +104,23 @@ class OutboxTransferEventPublisher(
                 )
             )
         )
+    }
+
+    private fun finishedCounter(kind: String, status: String): Counter =
+        Counter.builder("transfer.finished")
+            .description("끝 상태로 바뀐 송금 수 (커밋된 것만)")
+            .tag("kind", kind).tag("status", status)
+            .register(registry)
+
+    private fun countAfterCommit(kind: String, status: String) {
+        val counter = finishedCounter(kind, status)
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                override fun afterCommit() = counter.increment()
+            })
+        } else {
+            counter.increment()   // 포트 계약상 트랜잭션 안에서만 부르지만, 밖이라면 INSERT가 이미 커밋됐다
+        }
     }
 
     // 이벤트의 failureCode = 고객에게 알릴 "왜". 도메인은 출처별로 칸을 나눴지만(출금 실패 / 외부 거절) 이벤트 계약은 칸 하나다

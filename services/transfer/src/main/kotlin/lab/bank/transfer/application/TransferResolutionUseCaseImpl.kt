@@ -22,13 +22,15 @@ class TransferResolutionUseCaseImpl(
     private val transferRepository: TransferRepository,
     private val resolver: TransferResolver,
     private val properties: ResolutionProperties,
+    private val metrics: ResolutionMetrics,
 ) : TransferResolutionUseCase {
 
-    override fun resolveStuck(): Int =
-        transactionTemplate.execute {
+    override fun resolveStuck(): Int {
+        // 결과(끝 상태 또는 null = 못 풂)를 모았다가 커밋된 뒤에 센다: 회차 중간에 예외로 롤백되면 아무것도 확정되지 않았다
+        val outcomes = transactionTemplate.execute {
             val sentBefore = Instant.now().minus(properties.checkAfter)
             val batch = transferRepository.findUnresolvedForUpdate(sentBefore, properties.batchSize)
-            var resolved = 0
+            val outcomes = mutableListOf<String?>()
             for (transfer in batch) {
                 val before = transfer.status   // 값으로 떠 둔다 (resolve가 같은 객체를 바꾼다)
                 val after = resolver.resolve(transfer)
@@ -40,11 +42,17 @@ class TransferResolutionUseCaseImpl(
                 }
                 // 기준 시간이 지난 것만 잡았으니, 조회 뒤에도 끝 상태가 아니면 = 조회 자체가 실패(core 장애·타임아웃).
                 // 나머지도 같은 이유로 건마다 타임아웃만큼 기다리며 실패할 것 → 이번 회차는 여기서 끝 (잠금을 오래 쥐지 않게)
-                if (!after.status.isFinal) break
-                resolved++
+                if (!after.status.isFinal) {
+                    outcomes += null
+                    break
+                }
+                outcomes += after.status.name
             }
-            resolved
-        }
+            outcomes
+        } ?: emptyList()
+        outcomes.forEach { if (it == null) metrics.stillStuck(ResolutionMetrics.DOMESTIC) else metrics.resolved(ResolutionMetrics.DOMESTIC, it) }
+        return outcomes.count { it != null }
+    }
 
     companion object {
         private val log = LoggerFactory.getLogger(TransferResolutionUseCaseImpl::class.java)
