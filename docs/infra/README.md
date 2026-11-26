@@ -376,6 +376,11 @@ GitOps 함정 메모:
 - 히스토그램(p99용)을 `http.client.requests`·`spring.cloud.gateway.requests`·`spring.kafka.listener`·`spring.kafka.template`·`tasks.scheduled.execution`에도 켰다 (서비스 공통 블록)
 - **함정:** `RestClient.builder()`로 직접 만든 클라이언트는 `observationRegistry`를 넘기지 않으면 지표가 없다. 트레이스는 OTel 에이전트가 따로 잡아서 보이니 "계측되고 있다"고 착각하기 쉽다
 
+**은행 운영 대시보드** (2026-11-26, `deploy/grafana/dashboards/bank-ops.json`, uid `bank-ops`): 은행을 24시간 돌려 두고 아침마다 보는 화면. RED가 "어느 서비스가 아픈가"라면 이건 "돈이 어떻게 흘렀나"
+- ① 끝난 송금·완료 비율·표류 중(접수 1분 넘음)·가장 오래된 미해결·대사 경보·이월 → ② 끝나지 않은 송금(나이 구간·상태별·가장 오래된 나이, 해소 일꾼 결과) → ③ 송금 결과 흐름·보상 비율·Outbox → ④ bank-mock 스위치·판정·결과 불명을 만드는 것 → ⑤ 대사 항목·마지막 대사/추출 경과
+- 지표 출처: transfer `transfer_unresolved{kind,status,age}`·`transfer_unresolved_oldest_age_seconds`(DB에서 15초마다, 해소용 부분 인덱스만 훑음), `transfer_finished_total`(Outbox 발행기, 커밋 뒤), `transfer_resolution_total` / bank-mock `bankmock_interbank_judged_total`·`_deadline_exceeded_total`·`_response_delayed_total`·`bankmock_switch{name}` / reconciliation `reconciliation_*`
+- DB 기반 게이지는 파드마다 같은 값 → 쿼리에서 `max by`로 접고 나서 더한다. 송금 ID는 지표 라벨에 넣지 않는다 (시계열 폭증) → 패널의 안내대로 Loki나 DataGrip
+
 ### 관측성·실험 배관 확장 (2026-11-25, 10~12주 차 배관을 8주 차와 병렬로)
 
 | 무엇 | 어디 | 확인 / 접속 |
@@ -450,6 +455,7 @@ kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-passwor
 - core: `http://core.172.30.1.240.nip.io/actuator/health` (3주 차 gateway가 생기면 닫는다)
 - Grafana: `http://grafana.172.30.1.240.nip.io` (admin / 비밀번호: Secret `monitoring/grafana-admin`, 위 "관측성 기본 스택")
 - Prometheus UI: Ingress 없음 (인증이 없어서). `kubectl -n monitoring port-forward svc/kps-prometheus 9090`
+- **DB (DataGrip 등, 2026-11-26):** `./infra/scripts/db-forward.sh [core|transfer|notification|bank-mock|reconciliation]` → localhost 15432~15436으로 port-forward하고 접속 정보(각 `<클러스터>-app` Secret)를 출력, Ctrl+C로 닫힘. 끊기면 2초 뒤 다시 붙는다. 앱 계정이라 쓰기가 되므로 DataGrip 데이터 소스에서 **Read-only를 켠다**. LoadBalancer로 열지 않은 이유: 늘 열려 있게 되고, port-forward는 kubectl 권한 + 터미널이 켜진 동안만 (Tailscale로 밖에서도 됨)
 
 ## 7. 트러블슈팅 로그
 
